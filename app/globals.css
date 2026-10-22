@@ -1,15 +1,44 @@
 @import "tailwindcss";
 
 :root {
-  --background: #070b14;
-  --foreground: #e2e8f0;
+  --background: #060a13;
+  --foreground: #e8edf6;
 }
 
+/* Mission Console design tokens (from the AAHMS design canvas) */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", monospace;
+  --color-mc-bg: #060a13;
+  --color-mc-header: #08101e;
+  --color-mc-bar: #070d19;
+  --color-mc-panel: #0c1322;
+  --color-mc-inset: #0a1120;
+  --color-mc-raised: #131d33;
+  --color-mc-line: #1c2840;
+  --color-mc-line-strong: #24314d;
+  --color-mc-label: #8a95ac;
+  --color-mc-muted: #a3aec2;
+  --color-mc-soft: #c9d2e3;
+  --color-mc-nasa: #0b3d91;
+  --color-mc-nasa-edge: #2a5bc0;
+  --color-mc-select: #4c8dff;
+  --color-mc-cyan: #5cc8ff;
+  --color-mc-link: #7fb2ff;
+  --color-mc-green: #3ddc97;
+  --color-mc-amber: #f5b82e;
+  --color-mc-red: #ff5d5d;
+  --color-mc-violet: #9c8cff;
+  --font-sans: var(--font-inter), "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "Cascadia Code", monospace;
+}
+
+@utility mc-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-mc-label);
 }
 
 body {

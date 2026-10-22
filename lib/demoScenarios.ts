@@ -31,7 +31,7 @@ export const DEMO_SCENARIOS: DemoScenarioPreset[] = [
   },
   {
     id: "arrhythmia",
-    label: "Arrhythmia",
+    label: "Arrhythmia · 20m latency",
     heartRateOffset: 35,
     hrvOffset: -25,
     radiation: 0.021,

@@ -12,24 +12,34 @@ export function ExerciseSleep() {
   const sleepPct = (sleepHours / sleepTarget) * 100;
 
   return (
-    <Card title="Exercise & sleep adherence">
-      <div className="flex flex-wrap justify-around gap-6">
+    <Card title="Exercise & sleep adherence" className="flex flex-col">
+      <div className="flex flex-wrap justify-around gap-4">
         <Ring
           pct={exPct}
           label={`${Math.round(exPct)}%`}
-          sub={`${exerciseMinutes}/${exerciseTarget} min`}
+          sub={`${exerciseMinutes}/${exerciseTarget} MIN`}
           caption="Resistance + treadmill"
+          stroke="stroke-mc-select"
         />
         <Ring
           pct={sleepPct}
           label={`${sleepHours}h`}
-          sub={`of ${sleepTarget} h`}
+          sub={`OF ${sleepTarget.toFixed(1)} H`}
           caption="Sleep quota"
+          stroke="stroke-mc-violet"
         />
       </div>
-      <p className="mt-3 text-center text-[10px] text-emerald-500/80">
-        ACCEL + HRV VERIFIED
-      </p>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <span className="rounded border border-[#1f4470] px-2 py-1 font-mono text-[11px] text-mc-link">
+          ✓ ACCEL + HRV VERIFIED
+        </span>
+        <button
+          type="button"
+          className="min-h-9 rounded-md border border-mc-line-strong bg-[#0f182b] px-3.5 text-[13px] font-medium hover:bg-mc-raised"
+        >
+          Voice reminder
+        </button>
+      </div>
     </Card>
   );
 }
@@ -39,20 +49,21 @@ function Ring({
   label,
   sub,
   caption,
+  stroke,
 }: {
   pct: number;
   label: string;
   sub: string;
   caption: string;
+  stroke: string;
 }) {
-  const size = 100;
   return (
     <div className="flex flex-col items-center gap-2">
-      <CircularProgress size={size} strokeWidth={7} percent={pct}>
-        <div className="font-mono text-sm leading-none text-cyan-100">{label}</div>
-        <div className="mt-1 text-[10px] text-slate-500">{sub}</div>
+      <CircularProgress size={116} strokeWidth={9} percent={pct} trackClassName="stroke-mc-line" progressClassName={stroke}>
+        <div className="font-mono text-[22px] leading-none">{label}</div>
+        <div className="mt-1.5 font-mono text-[10px] text-mc-label">{sub}</div>
       </CircularProgress>
-      <p className="max-w-[120px] text-center text-[10px] text-slate-500">{caption}</p>
+      <p className="text-[13px] text-mc-muted">{caption}</p>
     </div>
   );
 }

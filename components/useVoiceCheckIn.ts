@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   createSpeechRecognition,
   isSpeechRecognitionSupported,
@@ -8,12 +8,19 @@ import {
   type SpeechListenStatus,
 } from "@/lib/speechRecognition";
 
+const noopSubscribe = () => () => {};
+
 export function useVoiceCheckIn(onFinalTranscript: (text: string) => void) {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const [status, setStatus] = useState<SpeechListenStatus>("idle");
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const supported = isSpeechRecognitionSupported();
+  // false during SSR and hydration, real value after, so server and client HTML match.
+  const supported = useSyncExternalStore(
+    noopSubscribe,
+    isSpeechRecognitionSupported,
+    () => false
+  );
 
   const stop = useCallback(() => {
     recognitionRef.current?.abort();
