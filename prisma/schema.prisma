@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  COMMANDER
+  ASTRONAUT
+}
+
+model User {
+  id        String            @id @default(cuid())
+  name      String
+  email     String            @unique
+  password  String
+  role      Role
+  callsign  String
+  crewId    String
+  records   BiometricRecord[]
+  createdAt DateTime          @default(now())
+}
+
+model BiometricRecord {
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  heartRate Int
+  hrv       Float?
+  spo2      Float
+  radiation Float?
+  synced    Boolean  @default(true)
+  timestamp DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId, timestamp])
+}

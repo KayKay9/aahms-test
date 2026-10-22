@@ -1,36 +1,34 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AAHMS — Autonomous Astronaut Health Monitoring System
 
-## Getting Started
+NASA Space Apps Challenge demo: edge AI health monitoring with **Neon PostgreSQL**, **Prisma**, **Dexie (IndexedDB)**, and **WebLLM** (browser-side inference).
 
-First, run the development server:
+## Setup
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. Copy `.env.example` to `.env` and set `DATABASE_URL` and `SESSION_SECRET`.
+2. `npm install`
+3. `npm run db:push && npm run db:seed`
+4. `npm run dev`
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Demo accounts
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+All seeded users share password **`aahms2025`**.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Email | Role |
+|-------|------|
+| `ground@aahms.demo` | Commander (all crews) |
+| `john@aahms.demo` | Astronaut EV1 (MTV-1) |
+| `vance@aahms.demo` | Astronaut CDR (MTV-1) |
 
-## Learn More
+## Offline demo
 
-To learn more about Next.js, take a look at the following resources:
+1. Log in as an astronaut and let vitals simulate (or record manually).
+2. DevTools → Network → Offline.
+3. Open co-pilot chat after WebLLM model loads (requires WebGPU).
+4. Go online and click **Sync to Earth** or wait for auto-sync.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Stack
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Next.js App Router, TypeScript, Tailwind CSS v4
+- Prisma 6 + Neon PostgreSQL
+- Dexie.js offline queue with `synced` flag
+- `@mlc-ai/web-llm` (Llama 3.2 1B Q4)
