@@ -45,7 +45,8 @@ type CopilotContextValue = {
   loadProgress: string;
   loadPercent: number | null;
   modelCached: boolean | null;
-  loadError: string | null;
+  modelId: string | null;
+  basicReason: string | null;
   inferMs: number | null;
   retryEngine: () => void;
   chatOpen: boolean;
@@ -98,7 +99,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     const displayVitals = session?.displayVitals;
     const latest = userId ? await getLatestForUser(userId) : undefined;
     const vitalsCtx = latest
-      ? `HR ${latest.heartRate}, HRV ${Math.round(latest.hrv)}, SpO₂ ${latest.spo2}%, rad ${latest.radiation} mSv/h`
+      ? `HR ${latest.heartRate}, HRV ${Math.round(latest.hrv)}, SpO₂ ${Math.round(latest.spo2)}%, rad ${latest.radiation.toFixed(3)} mSv/h`
       : displayVitals
         ? `HR ${displayVitals.heartRate}, HRV ${displayVitals.hrv}, SpO₂ ${displayVitals.spo2}%`
         : "no local vitals cached";
@@ -201,7 +202,8 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     loadProgress: llm.text,
     loadPercent: llm.progress,
     modelCached: llm.cached,
-    loadError: llm.error,
+    modelId: llm.model,
+    basicReason: llm.reason,
     inferMs,
     retryEngine: () => void preloadEngine(true),
     chatOpen,

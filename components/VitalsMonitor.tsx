@@ -135,7 +135,6 @@ export function VitalsMonitor({
   }, [display, arrhythmia]);
 
   const risk = assessRisk(display);
-  const rhythm = arrhythmia ? "IRREGULAR RHYTHM — REVIEW" : "NORMAL SINUS RHYTHM";
 
   const riskTone =
     risk === "GREEN"
@@ -147,34 +146,31 @@ export function VitalsMonitor({
   return (
     <Card
       title={
-        <>
-          Biometrics · HR &amp; HRV ·{" "}
-          <span className="text-[13px] font-semibold normal-case tracking-normal text-mc-soft">{userName}</span>
-        </>
+        <span className="text-sm font-semibold normal-case tracking-normal text-foreground">{userName}</span>
       }
       action={
         <span className={`rounded border px-2 py-1 font-mono text-[11px] ${riskTone}`}>
-          {rhythm} · {riskLabel(risk)}
+          {arrhythmia ? "Irregular rhythm" : "Normal rhythm"} · {riskLabel(risk)}
         </span>
       }
     >
-      <div className="flex flex-wrap items-center gap-6">
-        <div className="flex min-w-0 flex-[999_1_420px] flex-col gap-2">
-          <EcgMonitor heartRate={live.heartRate} hrv={live.hrv} irregular={arrhythmia} className="h-[150px]" />
-          <div className="flex justify-between font-mono text-[11px] text-mc-label">
-            <span>LEAD II · 25 MM/S · 10 MM/MV</span>
-            <span>HRV RMSSD · 24 H TREND</span>
-          </div>
+      <div className="grid grid-cols-3 gap-3">
+        <Metric label="Heart rate" value={live.heartRate} unit="bpm" big pulse />
+        <Metric label="SpO₂" value={Math.round(live.spo2)} unit="%" big />
+        <Metric label="HRV" value={Math.round(live.hrv)} unit="ms" big />
+      </div>
+      <div className="mt-4">
+        <EcgMonitor heartRate={live.heartRate} hrv={live.hrv} irregular={arrhythmia} className="h-[130px]" />
+      </div>
+
+      <details className="group mt-4 border-t border-mc-line pt-3">
+        <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between text-xs font-medium text-mc-muted hover:text-white">
+          24 h HRV trend{canWrite ? " and manual entry" : ""}
+          <span className="transition group-open:rotate-180" aria-hidden>▾</span>
+        </summary>
+        <div className="mt-3">
           <HrvTrend userId={userId} values={hrvHistory} current={live.hrv} />
         </div>
-        <div className="flex flex-[1_1_160px] flex-col gap-4 border-l border-mc-line pl-6">
-          <Metric label="Heart rate" value={live.heartRate} unit="bpm" big pulse />
-          <div className="flex gap-6">
-            <Metric label="SpO₂" value={Math.round(live.spo2)} unit="%" />
-            <Metric label="HRV" value={Math.round(live.hrv)} unit="ms" />
-          </div>
-        </div>
-      </div>
       {canWrite && (
         <form
           className="mt-5 grid grid-cols-2 gap-3 border-t border-mc-line pt-4 text-xs md:grid-cols-4"
@@ -213,6 +209,7 @@ export function VitalsMonitor({
           </button>
         </form>
       )}
+      </details>
     </Card>
   );
 }
@@ -231,14 +228,14 @@ function Metric({
   pulse?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex flex-col gap-0.5 rounded-md bg-mc-inset px-4 py-3">
       <span className="mc-label flex items-center gap-2">
         {label}
         {pulse && <span className="h-1.5 w-1.5 animate-ping rounded-full bg-mc-green" aria-hidden />}
       </span>
-      <span className={`font-mono tabular-nums ${big ? "text-[40px] font-medium leading-tight" : "text-[22px]"}`}>
+      <span className={`font-mono tabular-nums ${big ? "text-[32px] font-medium leading-tight" : "text-[22px]"}`}>
         {value}
-        <span className={`text-mc-label ${big ? "text-sm" : "text-xs"}`}> {unit}</span>
+        <span className="text-sm text-mc-label"> {unit}</span>
       </span>
     </div>
   );

@@ -72,6 +72,8 @@ export function EcgMonitor({
     let rr = 60 / Math.max(30, params.current.heartRate);
     let waves = beatWaves(rr, params.current.irregular);
     let fib = 0;
+    let grid: HTMLCanvasElement | null = null;
+    let gridPxPerMm = 1;
 
     const nextBeat = () => {
       const { heartRate: hr, hrv: v, irregular: irr } = params.current;
@@ -118,30 +120,45 @@ export function EcgMonitor({
       trace = new Float32Array(w).fill(NaN);
       trace.set(old.subarray(0, Math.min(old.length, w)));
       head = Math.min(head, w - 1);
+      grid = null; // repaint the static grid at the new size
+    };
+
+    // The grid never changes, so paint it once per size and blit it each frame.
+    const paintGrid = () => {
+      const c = document.createElement("canvas");
+      c.width = w * dpr;
+      c.height = h * dpr;
+      const g = c.getContext("2d");
+      if (!g) return;
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const pxPerMm = w / (SWEEP_SECONDS * 25);
+      g.fillStyle = "#0a1120";
+      g.fillRect(0, 0, w, h);
+      g.lineWidth = 1;
+      for (let i = 0, x = 0; x <= w; i++, x = i * pxPerMm) {
+        g.strokeStyle = i % 5 === 0 ? "rgba(61,220,151,0.16)" : "rgba(61,220,151,0.055)";
+        g.beginPath();
+        g.moveTo(Math.round(x) + 0.5, 0);
+        g.lineTo(Math.round(x) + 0.5, h);
+        g.stroke();
+      }
+      for (let i = 0, y = h / 2; y <= h; i++, y = h / 2 + i * pxPerMm) {
+        g.strokeStyle = i % 5 === 0 ? "rgba(61,220,151,0.16)" : "rgba(61,220,151,0.055)";
+        for (const yy of i === 0 ? [y] : [y, h - y]) {
+          g.beginPath();
+          g.moveTo(0, Math.round(yy) + 0.5);
+          g.lineTo(w, Math.round(yy) + 0.5);
+          g.stroke();
+        }
+      }
+      grid = c;
+      gridPxPerMm = pxPerMm;
     };
 
     const drawGrid = () => {
-      const pxPerMm = w / (SWEEP_SECONDS * 25);
-      ctx.fillStyle = "#0a1120";
-      ctx.fillRect(0, 0, w, h);
-      ctx.lineWidth = 1;
-      for (let i = 0, x = 0; x <= w; i++, x = i * pxPerMm) {
-        ctx.strokeStyle = i % 5 === 0 ? "rgba(61,220,151,0.16)" : "rgba(61,220,151,0.055)";
-        ctx.beginPath();
-        ctx.moveTo(Math.round(x) + 0.5, 0);
-        ctx.lineTo(Math.round(x) + 0.5, h);
-        ctx.stroke();
-      }
-      for (let i = 0, y = h / 2; y <= h; i++, y = h / 2 + i * pxPerMm) {
-        ctx.strokeStyle = i % 5 === 0 ? "rgba(61,220,151,0.16)" : "rgba(61,220,151,0.055)";
-        for (const yy of i === 0 ? [y] : [y, h - y]) {
-          ctx.beginPath();
-          ctx.moveTo(0, Math.round(yy) + 0.5);
-          ctx.lineTo(w, Math.round(yy) + 0.5);
-          ctx.stroke();
-        }
-      }
-      return pxPerMm;
+      if (!grid) paintGrid();
+      if (grid) ctx.drawImage(grid, 0, 0, w, h);
+      return gridPxPerMm;
     };
 
     const frame = (now: number) => {
@@ -162,8 +179,6 @@ export function EcgMonitor({
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.6;
       ctx.lineJoin = "round";
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 6;
       ctx.beginPath();
       let pen = false;
       for (let x = 0; x < w; x++) {
@@ -178,7 +193,6 @@ export function EcgMonitor({
         pen = true;
       }
       ctx.stroke();
-      ctx.shadowBlur = 0;
 
       // Write head
       const hv = trace[head];

@@ -15,10 +15,21 @@ export async function GET() {
   });
 
   const userIds = users.map((u) => u.id);
-  const records = await prisma.biometricRecord.findMany({
-    where: { userId: { in: userIds } },
-    orderBy: { timestamp: "desc" },
-  });
+  // Only the newest record per crew member is needed. Fetching the whole history
+  // (thousands of rows once vitals have been syncing a while) made this route take
+  // 5-10 s; one indexed (userId, timestamp) lookup per user runs in parallel instead.
+  const records = (
+    await Promise.all(
+      userIds.map((userId) =>
+        prisma.biometricRecord.findFirst({
+          where: { userId },
+          orderBy: { timestamp: "desc" },
+        })
+      )
+    )
+  )
+    .filter((r): r is NonNullable<typeof r> => r !== null)
+    .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
   const latestByUser = new Map<string, (typeof records)[0]>();
   for (const r of records) {
