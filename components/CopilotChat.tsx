@@ -5,6 +5,8 @@ import { useEffect, useRef } from "react";
 export type CopilotChatMessage = {
   role: "user" | "assistant";
   content: string;
+  /** True while tokens are still arriving from the model. */
+  streaming?: boolean;
 };
 
 export function CopilotChat({
@@ -65,7 +67,7 @@ export function CopilotChat({
             </div>
           </div>
         ))}
-        {isSending && (
+        {isSending && !messages[messages.length - 1]?.streaming && (
           <div className="flex justify-start">
             <div className="rounded-2xl rounded-bl-md border border-slate-700/50 bg-slate-800/80 px-3 py-2 text-xs text-slate-500">
               Thinking…

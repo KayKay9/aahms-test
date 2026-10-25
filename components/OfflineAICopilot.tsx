@@ -7,8 +7,12 @@ import { riskLabel } from "@/lib/risk";
 import { useMissionTelemetry } from "@/components/MissionTelemetryProvider";
 import { useSync } from "./SyncContext";
 import { useCopilot } from "./CopilotProvider";
+import { WEBLLM_MODEL_ID } from "@/lib/webllm/engine";
 
-const MODEL_LABEL = "LLAMA-3.2-1B-Q4";
+const MODEL_LABEL = WEBLLM_MODEL_ID.replace(/-MLC$/, "")
+  .replace(/-Instruct/, "")
+  .replace(/-q(\d)f\d+_\d$/, "-Q$1")
+  .toUpperCase();
 
 type OfflineAICopilotProps = {
   userId: string;
@@ -34,6 +38,8 @@ export function OfflineAICopilot({
     setVoiceTranscript,
     engineStatus,
     loadProgress,
+    loadPercent,
+    modelCached,
     loadError,
     inferMs,
     retryEngine,
@@ -199,8 +205,20 @@ export function OfflineAICopilot({
         </div>
         <p className={`text-xs ${engineStatus === "failed" ? "text-mc-red" : "text-mc-label"}`}>{statusLine}</p>
         {engineStatus === "loading" && (
-          <div className="h-1 overflow-hidden rounded bg-mc-line" aria-hidden>
-            <div className="h-full w-1/3 animate-pulse bg-mc-cyan" />
+          <div>
+            <div className="h-1 overflow-hidden rounded bg-mc-line">
+              <div
+                className={`h-full bg-mc-cyan transition-[width] duration-300 ${
+                  loadPercent == null ? "w-1/3 animate-pulse" : ""
+                }`}
+                style={loadPercent == null ? undefined : { width: `${Math.round(loadPercent * 100)}%` }}
+              />
+            </div>
+            <p className="mt-1 text-[11px] text-mc-label">
+              {modelCached
+                ? "Weights cached on this device, no download needed."
+                : "One-time download, then cached for offline use. Edge triage answers meanwhile."}
+            </p>
           </div>
         )}
         {engineStatus === "failed" && (
