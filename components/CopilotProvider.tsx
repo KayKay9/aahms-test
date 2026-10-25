@@ -5,20 +5,20 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
-import type { MLCEngine } from "@mlc-ai/web-llm";
 import { assessRisk, riskLabel, type RiskLevel } from "@/lib/risk";
 import { generateCopilotFallback } from "@/lib/copilotFallback";
 import { getLatestForUser } from "@/lib/db";
 import { getPvtSummary } from "@/components/PVTTest";
 import type { CopilotChatMessage } from "@/components/CopilotChat";
-
-const MODEL_ID = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
-
-type EngineStatus = "idle" | "loading" | "ready" | "failed";
+import {
+  getEngine,
+  preloadEngine,
+  useWebLLM,
+  type EngineStatus,
+} from "@/lib/webllm/engine";
 
 export type CopilotSession = {
   userId: string;
@@ -43,6 +43,8 @@ type CopilotContextValue = {
   isSending: boolean;
   engineStatus: EngineStatus;
   loadProgress: string;
+  loadPercent: number | null;
+  modelCached: boolean | null;
   loadError: string | null;
   inferMs: number | null;
   retryEngine: () => void;
@@ -59,14 +61,11 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [messages, setMessages] = useState<CopilotChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [engineStatus, setEngineStatus] = useState<EngineStatus>("idle");
-  const [loadProgress, setLoadProgress] = useState("");
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const llm = useWebLLM();
+  const engineStatus = llm.status;
   const [inferMs, setInferMs] = useState<number | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const engineRef = useRef<MLCEngine | null>(null);
-  const initStartedRef = useRef(false);
 
   const setSession = useCallback((s: CopilotSession) => {
     setSessionState(s);
@@ -81,46 +80,17 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     ? assessRisk(session.displayVitals)
     : "GREEN";
 
-  const initEngine = useCallback(async (force = false) => {
-    if (!force && (initStartedRef.current || engineRef.current)) return;
-    initStartedRef.current = true;
-    setEngineStatus("loading");
-    setLoadError(null);
-    setLoadProgress("Checking WebGPU…");
-
-    try {
-      const nav = navigator as Navigator & { gpu?: unknown };
-      if (typeof navigator !== "undefined" && !nav.gpu) {
-        throw new Error(
-          "WebGPU not available. Use Chrome or Edge 113+, or enable WebGPU in flags."
-        );
-      }
-
-      const webllm = await import("@mlc-ai/web-llm");
-      const e = await webllm.CreateMLCEngine(MODEL_ID, {
-        initProgressCallback: (report) => {
-          const pct =
-            report.progress !== undefined
-              ? ` (${Math.round(report.progress * 100)}%)`
-              : "";
-          setLoadProgress(`${report.text}${pct}`);
-        },
-      });
-      engineRef.current = e;
-      setEngineStatus("ready");
-      setLoadProgress("Model ready — on-device inference active");
-    } catch (err) {
-      initStartedRef.current = false;
-      engineRef.current = null;
-      setEngineStatus("failed");
-      setLoadError(err instanceof Error ? err.message : "WebLLM init failed");
-      setLoadProgress("");
-    }
-  }, []);
-
+  // Load the model once the console has rendered and the browser is idle, so the
+  // download and GPU init never compete with sign-in or the first dashboard fetch.
   useEffect(() => {
-    void initEngine();
-  }, [initEngine]);
+    const start = () => void preloadEngine();
+    if ("requestIdleCallback" in window) {
+      const id = requestIdleCallback(start, { timeout: 3000 });
+      return () => cancelIdleCallback(id);
+    }
+    const id = setTimeout(start, 1500);
+    return () => clearTimeout(id);
+  }, []);
 
   const buildContext = useCallback(async () => {
     const userId = session?.userId ?? "";
@@ -159,32 +129,48 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
           ...ctx,
           webLlmReady: false,
         });
-      } else if (engineStatus !== "ready" || !engineRef.current) {
+      } else if (engineStatus !== "ready" || !getEngine()) {
         assistantContent = generateCopilotFallback(userMsg, ctx);
       } else {
         const system = `You are the Flight Surgeon Co-Pilot on a Mars transit vehicle. Answer in 2-4 short sentences for crew health questions. Crew: ${userName}. Vitals: ${ctx.vitalsSummary}. Risk: ${riskLabel(risk)}. ${ctx.pvtSummary}. Voice: ${voiceTranscript}.`;
 
         const t0 = performance.now();
+        // Stream tokens into the chat so the crew sees the answer forming instead of
+        // waiting for the whole reply (decode can be a few tokens/s on laptop GPUs).
+        const showPartial = (content: string) =>
+          setMessages((m) => {
+            const last = m[m.length - 1];
+            return last?.role === "assistant" && last.streaming
+              ? [...m.slice(0, -1), { role: "assistant", content, streaming: true }]
+              : [...m, { role: "assistant", content, streaming: true }];
+          });
         try {
-          const reply = await engineRef.current.chat.completions.create({
+          const stream = await getEngine()!.chat.completions.create({
             messages: [
               { role: "system", content: system },
               ...messages.map((msg) => ({ role: msg.role, content: msg.content })),
               { role: "user", content: userMsg },
             ],
             temperature: 0.4,
-            max_tokens: 256,
+            max_tokens: 160,
+            stream: true,
           });
+          let text = "";
+          for await (const chunk of stream) {
+            text += chunk.choices[0]?.delta?.content ?? "";
+            if (text) showPartial(text);
+          }
           setInferMs(Math.round(performance.now() - t0));
-          assistantContent =
-            reply.choices[0]?.message?.content?.trim() ||
-            generateCopilotFallback(userMsg, ctx);
+          assistantContent = text.trim() || generateCopilotFallback(userMsg, ctx);
         } catch {
           assistantContent = generateCopilotFallback(userMsg, ctx);
         }
       }
 
-      setMessages((m) => [...m, { role: "assistant", content: assistantContent }]);
+      setMessages((m) => [
+        ...m.filter((msg) => !msg.streaming),
+        { role: "assistant", content: assistantContent },
+      ]);
     } finally {
       setIsSending(false);
     }
@@ -212,10 +198,12 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     sendMessage,
     isSending,
     engineStatus,
-    loadProgress,
-    loadError,
+    loadProgress: llm.text,
+    loadPercent: llm.progress,
+    modelCached: llm.cached,
+    loadError: llm.error,
     inferMs,
-    retryEngine: () => void initEngine(true),
+    retryEngine: () => void preloadEngine(true),
     chatOpen,
     setChatOpen,
     toggleChat,

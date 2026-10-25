@@ -1,6 +1,6 @@
 "use client";
 
-import { riskColorClass, type RiskLevel } from "@/lib/risk";
+import type { RiskLevel } from "@/lib/risk";
 
 export type CrewMemberView = {
   id: string;
@@ -9,6 +9,12 @@ export type CrewMemberView = {
   heartRate: number;
   hrv: number;
   risk: RiskLevel;
+};
+
+const RISK_DOT: Record<RiskLevel, string> = {
+  GREEN: "bg-mc-green",
+  YELLOW: "bg-mc-amber",
+  RED: "bg-mc-red",
 };
 
 export function CrewOverview({
@@ -21,38 +27,39 @@ export function CrewOverview({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-      {members.map((m) => (
-        <button
-          key={m.id}
-          type="button"
-          onClick={() => onSelect(m.id)}
-          className={`rounded-lg border p-3 text-left transition ${
-            selectedId === m.id
-              ? "border-cyan-500/60 bg-cyan-500/10"
-              : "border-cyan-900/40 bg-[#0a1020] hover:border-cyan-800/60"
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="font-medium text-slate-200">{m.name}</span>
-            <span
-              className={`rounded px-1.5 text-[10px] border ${riskColorClass(m.risk)}`}
-            >
-              {m.callsign}
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {members.map((m) => {
+        const selected = selectedId === m.id;
+        return (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => onSelect(m.id)}
+            aria-pressed={selected}
+            className={`flex flex-col gap-2 rounded-lg border px-4 py-3.5 text-left transition ${
+              selected
+                ? "border-mc-select bg-[#0f1a30]"
+                : "border-mc-line bg-mc-panel hover:border-mc-line-strong"
+            }`}
+          >
+            <span className="flex items-center justify-between">
+              <span className="text-sm font-semibold">{m.name}</span>
+              <span className="font-mono text-[11px] text-mc-label">{m.callsign}</span>
             </span>
-          </div>
-          <div className="mt-2 flex gap-4 font-mono text-sm">
-            <span>
-              <span className="text-slate-500 text-xs">BPM </span>
-              {m.heartRate}
+            <span className="flex items-baseline gap-3.5">
+              <span className="font-mono text-xl">
+                {m.heartRate}
+                <span className="text-[11px] text-mc-label"> BPM</span>
+              </span>
+              <span className="font-mono text-xs text-mc-muted">HRV {Math.round(m.hrv)}</span>
+              <span
+                className={`ml-auto h-2 w-2 self-center rounded-full ${RISK_DOT[m.risk]}`}
+                aria-label={`Risk ${m.risk.toLowerCase()}`}
+              />
             </span>
-            <span>
-              <span className="text-slate-500 text-xs">HRV </span>
-              {Math.round(m.hrv)}
-            </span>
-          </div>
-        </button>
-      ))}
+          </button>
+        );
+      })}
     </div>
   );
 }

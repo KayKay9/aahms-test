@@ -31,4 +31,11 @@ All seeded users share password **`aahms2025`**.
 - Next.js App Router, TypeScript, Tailwind CSS v4
 - Prisma 6 + Neon PostgreSQL
 - Dexie.js offline queue with `synced` flag
-- `@mlc-ai/web-llm` (Llama 3.2 1B Q4)
+- `@mlc-ai/web-llm` (Llama 3.2 1B Q4), run in a Web Worker
+
+## Co-pilot model loading
+
+- The model starts loading once the console has rendered and the browser is idle, so it never competes with sign-in or the first dashboard fetch.
+- Weights are cached in the browser Cache API (persistent storage is requested), so only the first visit downloads them. Later visits only load from disk into the GPU.
+- After loading, a 1-token warmup compiles the GPU kernels so the first real question is fast.
+- Set `NEXT_PUBLIC_WEBLLM_MODEL` to swap models, e.g. `SmolLM2-360M-Instruct-q4f16_1-MLC` for a much smaller download on slow links.

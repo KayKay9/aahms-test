@@ -4,21 +4,24 @@ export function Card({
   children,
   className = "",
   title,
+  action,
 }: {
   children: ReactNode;
   className?: string;
-  title?: string;
+  title?: ReactNode;
+  action?: ReactNode;
 }) {
   return (
-    <div
-      className={`rounded-lg border border-cyan-900/40 bg-[#0d1526]/90 p-4 ${className}`}
+    <section
+      className={`rounded-lg border border-mc-line bg-mc-panel px-6 py-5 ${className}`}
     >
-      {title && (
-        <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-cyan-500/80">
-          {title}
-        </h3>
+      {(title || action) && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          {title && <h3 className="mc-label">{title}</h3>}
+          {action}
+        </div>
       )}
       {children}
-    </div>
+    </section>
   );
 }

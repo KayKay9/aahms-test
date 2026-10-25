@@ -99,16 +99,16 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
   const tabs = [
     { id: "telemetry", label: "Live Telemetry & Crew" },
     { id: "pvt", label: "Cognitive PVT Lab" },
-    { id: "queue", label: `Store-and-Forward Queue (${unsyncedCount})` },
+    { id: "queue", label: "Store-and-Forward Queue", badge: unsyncedCount },
   ];
 
   return (
     <CopilotProvider>
-    <div className="min-h-screen bg-[#070b14] p-4 pb-24 text-slate-200 md:p-6 md:pb-24">
+    <div className="flex min-h-screen flex-col bg-mc-bg p-4 pb-24 font-sans text-foreground md:p-6 md:pb-24">
       <SyncEngine />
       <MissionHeader crewRisks={crewRisks} />
 
-      <div className="mt-4 flex flex-col gap-4 lg:flex-row">
+      <div className="mt-6 flex flex-col gap-5 lg:flex-row lg:items-start">
         <OfflineAICopilot
           userId={user.userId}
           userName={user.name}
@@ -124,13 +124,13 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
           }
         />
 
-        <main className="min-w-0 flex-1 space-y-4">
+        <main className="flex min-w-0 flex-col gap-5 lg:flex-[999_1_640px]">
           <TabBar tabs={tabs} active={tab} onChange={setTab} />
 
           {tab === "telemetry" && (
             <>
               {user.role === "COMMANDER" && data && (
-                <p className="text-[10px] text-slate-600">
+                <p className="font-mono text-[11px] text-mc-label">
                   Neon last record:{" "}
                   {data.syncStatus.lastSyncAt ?? "—"}
                 </p>
@@ -154,7 +154,7 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
                   .filter((c) => c.crewId !== "MTV-1")
                   .map((crew) => (
                     <div key={crew.crewId} className="space-y-2">
-                      <h3 className="text-xs text-slate-500">Crew {crew.crewId}</h3>
+                      <h3 className="mc-label">Crew {crew.crewId}</h3>
                       <CrewOverview
                         members={crew.members.map((m) => ({
                           id: m.user.id,
@@ -184,7 +184,7 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
                     : undefined
                 }
               />
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-5 md:grid-cols-2">
                 <CabinEnvironment />
                 <ExerciseSleep />
               </div>
@@ -195,6 +195,10 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
           {tab === "queue" && <StoreForwardQueue />}
         </main>
       </div>
+      <footer className="-mx-4 mt-auto flex flex-wrap justify-between gap-3 border-t border-mc-line px-6 pt-3 text-xs text-mc-label md:-mx-6">
+        <span>C&amp;W colour coding per NASA-STD-3001 conventions: red warning · amber caution · cyan advisory · green nominal</span>
+        <span>Concept prototype · not an official NASA system</span>
+      </footer>
       <CopilotFloatingLauncher />
     </div>
     </CopilotProvider>
