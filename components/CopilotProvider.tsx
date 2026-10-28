@@ -209,7 +209,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
           others.length ? `All others NOMINAL: ${others.map((m) => m.name).join(", ")}.` : "",
           ...focus.slice(0, 2).map((m) => describeProfile(m.name)).filter((p): p is string => p !== null),
           habitatFlags.length ? `Habitat: ${habitatFlags.join("; ")}.` : "Habitat: cabin air and radiation normal.",
-          `Sleep last night ${telemetry.sleepHours} h (target ${telemetry.sleepTarget}). ${ctx.pvtSummary}.`,
+          `Sleep last night ${telemetry.sleepHours.toFixed(1)} h (target ${telemetry.sleepTarget}). Exercise today ${telemetry.exerciseMinutes}/${telemetry.exerciseTarget} min. ${ctx.pvtSummary}.`,
           "PROTOCOLS:",
           ...protocols.map((p) => `${p.title}: ${p.text}`),
         ]

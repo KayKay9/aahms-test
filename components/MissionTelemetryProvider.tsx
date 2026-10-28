@@ -13,6 +13,7 @@ import {
   getScenario,
   type DemoScenarioPreset,
 } from "@/lib/demoScenarios";
+import { EXERCISE_TARGET, SLEEP_TARGET, useRoutineLog } from "@/lib/routineLog";
 
 export type MissionTelemetryState = {
   scenario: DemoScenarioPreset;
@@ -30,6 +31,7 @@ export type MissionTelemetryState = {
 };
 
 type MissionTelemetryContextValue = MissionTelemetryState & {
+  routine: ReturnType<typeof useRoutineLog>;
   setScenario: (id: DemoScenarioId) => void;
   setShieldingBoost: (v: boolean) => void;
   setSimulationEnabled: (v: boolean) => void;
@@ -45,6 +47,7 @@ export function MissionTelemetryProvider({ children }: { children: ReactNode }) 
   const [simulationEnabled, setSimulationEnabled] = useState(true);
 
   const scenario = getScenario(scenarioId);
+  const routine = useRoutineLog();
 
   const setScenario = useCallback((id: DemoScenarioId) => {
     setScenarioId(id);
@@ -60,10 +63,11 @@ export function MissionTelemetryProvider({ children }: { children: ReactNode }) 
       ppCO2: scenario.ppCO2,
       radiation: rad,
       shieldingBoost,
-      exerciseMinutes: 104,
-      exerciseTarget: 150,
-      sleepHours: 6.6,
-      sleepTarget: 8.5,
+      exerciseMinutes: routine.exerciseMinutes,
+      exerciseTarget: EXERCISE_TARGET,
+      sleepHours: routine.sleepHours,
+      sleepTarget: SLEEP_TARGET,
+      routine,
       voiceStress: scenario.voiceStress,
       arrhythmia: scenario.arrhythmia,
       pvtSlowdown: scenario.pvtSlowdown,
@@ -73,7 +77,7 @@ export function MissionTelemetryProvider({ children }: { children: ReactNode }) 
       setSimulationEnabled,
       setRadiation: () => {},
     };
-  }, [scenario, shieldingBoost, simulationEnabled, setScenario]);
+  }, [scenario, shieldingBoost, simulationEnabled, setScenario, routine]);
 
   return (
     <MissionTelemetryContext.Provider value={value}>

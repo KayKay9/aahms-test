@@ -167,7 +167,7 @@ export function evaRecommendation(r: {
   if (r.spo2 != null && r.spo2 < 95) reasons.push(`low SpO2 (${Math.round(r.spo2)}%)`);
   if (r.hrv != null && r.hrv <= 30) reasons.push(`low HRV (${Math.round(r.hrv)} ms)`);
   if (r.radiation != null && r.radiation >= 0.1) reasons.push("elevated radiation");
-  if (r.sleepHours != null && r.sleepHours < 6) reasons.push(`short sleep (${r.sleepHours} h)`);
+  if (r.sleepHours != null && r.sleepHours < 6) reasons.push(`short sleep (${r.sleepHours.toFixed(1)} h)`);
   return reasons.length ? `NO-GO, because of ${reasons.join(", ")}` : "GO, all readings in range";
 }
 
