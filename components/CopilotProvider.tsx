@@ -277,8 +277,6 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     engineStatus,
     messages,
     session,
-    risk,
-    voiceTranscript,
     telemetry,
   ]);
 
