@@ -6,7 +6,7 @@ import { assessRisk, type RiskLevel } from "@/lib/risk";
 import { MissionHeader } from "./MissionHeader";
 import { OfflineAICopilot } from "./OfflineAICopilot";
 import { CrewOverview, type CrewMemberView } from "./CrewOverview";
-import { VitalsMonitor } from "./VitalsMonitor";
+import { VitalsMonitor, type LiveVitals } from "./VitalsMonitor";
 import { CabinEnvironment } from "./CabinEnvironment";
 import { ExerciseSleep } from "./ExerciseSleep";
 import { PVTTest } from "./PVTTest";
@@ -47,6 +47,7 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
     user.role === "ASTRONAUT" ? user.userId : ""
   );
   const { unsyncedCount } = useSync();
+  const [liveSelected, setLiveSelected] = useState<LiveVitals | null>(null);
 
   const inFlight = useRef(false);
   const load = useCallback(async () => {
@@ -110,14 +111,20 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
   ];
 
   const crewCards = (list: DashboardResponse["crews"][number]["members"], hrvDefault: number) =>
-    list.map((m) => ({
-      id: m.user.id,
-      name: m.user.name,
-      callsign: m.user.callsign,
-      heartRate: m.latest?.heartRate ?? 70,
-      hrv: m.latest?.hrv ?? hrvDefault,
-      risk: m.risk,
-    }));
+    list.map((m) => {
+      const card = {
+        id: m.user.id,
+        name: m.user.name,
+        callsign: m.user.callsign,
+        heartRate: m.latest?.heartRate ?? 70,
+        hrv: m.latest?.hrv ?? hrvDefault,
+        risk: m.risk,
+      };
+      // The selected card mirrors the live readout below it.
+      return liveSelected?.userId === m.user.id
+        ? { ...card, heartRate: liveSelected.heartRate, hrv: liveSelected.hrv, risk: liveSelected.risk }
+        : card;
+    });
 
   return (
     <CopilotProvider>
@@ -157,13 +164,14 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
                 userId={selectedId}
                 userName={selectedMember?.name ?? user.name}
                 canWrite={canWrite}
+                onLive={setLiveSelected}
                 serverVitals={
                   selectedServer
                     ? {
                         heartRate: selectedServer.heartRate,
                         hrv: selectedServer.hrv ?? 60,
                         spo2: selectedServer.spo2,
-                        radiation: selectedServer.radiation ?? 0.021,
+                        radiation: selectedServer.radiation ?? 0.075,
                       }
                     : undefined
                 }
@@ -190,7 +198,7 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
                   heartRate: selectedMember.heartRate,
                   hrv: selectedMember.hrv,
                   spo2: selectedServer?.spo2 ?? 98,
-                  radiation: selectedServer?.radiation ?? 0.021,
+                  radiation: selectedServer?.radiation ?? 0.075,
                 }
               : undefined
           }

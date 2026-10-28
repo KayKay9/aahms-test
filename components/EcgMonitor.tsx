@@ -21,13 +21,17 @@ type Wave = { at: number; amp: number; width: number };
 function beatWaves(rr: number, irregular: boolean): Wave[] {
   // Timings in seconds from beat onset, QT shortening with rate (Bazett-ish).
   const qtScale = Math.sqrt(Math.min(1.4, Math.max(0.45, rr)));
+  const tPeak = 0.222 + 0.27 * qtScale;
   const waves: Wave[] = [
-    { at: 0.2, amp: -0.12, width: 0.009 }, // Q
-    { at: 0.222, amp: 1.25, width: 0.0095 }, // R
-    { at: 0.245, amp: -0.3, width: 0.011 }, // S
-    { at: 0.222 + 0.25 * qtScale, amp: 0.32, width: 0.05 * qtScale }, // T
+    { at: 0.204, amp: -0.08, width: 0.007 }, // Q
+    { at: 0.222, amp: 1.1, width: 0.008 }, // R
+    { at: 0.242, amp: -0.22, width: 0.009 }, // S
+    // A real T wave rises slowly and falls faster, so build it from a broad and a narrow lobe.
+    { at: tPeak - 0.035 * qtScale, amp: 0.14, width: 0.05 * qtScale },
+    { at: tPeak, amp: 0.2, width: 0.03 * qtScale },
+    { at: tPeak + 0.17 * qtScale, amp: 0.025, width: 0.03 * qtScale }, // U
   ];
-  if (!irregular) waves.unshift({ at: 0.1, amp: 0.13, width: 0.026 }); // P
+  if (!irregular) waves.unshift({ at: 0.09, amp: 0.11, width: 0.022 }); // P
   return waves;
 }
 
@@ -99,8 +103,9 @@ export function EcgMonitor({
         const d = dt - wv.at;
         mv += wv.amp * Math.exp(-(d * d) / (2 * wv.width * wv.width));
       }
-      mv += 0.06 * Math.sin(2 * Math.PI * 0.23 * t) + 0.025 * Math.sin(2 * Math.PI * 0.07 * t + 1);
-      mv += gauss() * 0.012;
+      // Breathing-linked baseline wander and light amplifier noise (monitor filters keep both small).
+      mv += 0.035 * Math.sin(2 * Math.PI * 0.23 * t) + 0.015 * Math.sin(2 * Math.PI * 0.07 * t + 1);
+      mv += gauss() * 0.006;
       if (params.current.irregular) {
         fib = fib * 0.85 + gauss() * 0.02;
         mv += fib + 0.04 * Math.sin(2 * Math.PI * 6.3 * t);
@@ -205,16 +210,10 @@ export function EcgMonitor({
         ctx.fillRect(head - 8, hy - 8, 16, 16);
       }
 
-      // Calibration pulse (1 mV, 200 ms), as printed on real strips
-      ctx.strokeStyle = "rgba(201,210,227,0.5)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      const base = h * 0.6;
-      ctx.moveTo(4, base);
-      ctx.lineTo(4, base - pxPerMm * 10 * 0.85);
-      ctx.lineTo(4 + pxPerMm * 5, base - pxPerMm * 10 * 0.85);
-      ctx.lineTo(4 + pxPerMm * 5, base);
-      ctx.stroke();
+      // Lead and sweep settings in the corner, as bedside monitors show them
+      ctx.fillStyle = "rgba(201,210,227,0.55)";
+      ctx.font = "10px ui-monospace, monospace";
+      ctx.fillText("II   25 mm/s   10 mm/mV", 6, 12);
 
       raf = requestAnimationFrame(frame);
     };

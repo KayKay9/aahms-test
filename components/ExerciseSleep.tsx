@@ -18,12 +18,12 @@ export function ExerciseSleep() {
           pct={exPct}
           label={`${Math.round(exPct)}%`}
           sub={`${exerciseMinutes}/${exerciseTarget} MIN`}
-          caption="Resistance + treadmill"
+          caption="Resistance + treadmill + cycle"
           stroke="stroke-mc-select"
         />
         <Ring
           pct={sleepPct}
-          label={`${sleepHours}h`}
+          label={`${Math.floor(sleepHours)}h ${String(Math.round((sleepHours % 1) * 60)).padStart(2, "0")}m`}
           sub={`OF ${sleepTarget.toFixed(1)} H`}
           caption="Sleep quota"
           stroke="stroke-mc-violet"
