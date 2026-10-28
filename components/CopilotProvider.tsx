@@ -12,6 +12,7 @@ import { assessRisk, describeVitals, riskLabel, type RiskLevel } from "@/lib/ris
 import { generateCopilotFallback } from "@/lib/copilotFallback";
 import { evaRecommendation, findProtocols, protocolsForReadings } from "@/lib/copilotKnowledge";
 import { useMissionTelemetry } from "@/components/MissionTelemetryProvider";
+import { describeProfile } from "@/lib/crewProfiles";
 import { getLatestForUser } from "@/lib/db";
 import { getPvtSummary } from "@/components/PVTTest";
 import type { CopilotChatMessage } from "@/components/CopilotChat";
@@ -22,11 +23,21 @@ import {
   type EngineStatus,
 } from "@/lib/webllm/engine";
 
+/** One crew member's latest reading and personal baseline, as the co-pilot sees them. */
+export type CrewBrief = {
+  name: string;
+  callsign: string;
+  risk: RiskLevel;
+  vitals: { heartRate: number; hrv: number; spo2: number; radiation: number } | null;
+  usualHr: number | null;
+  usualHrv: number | null;
+};
+
 export type CopilotSession = {
   userId: string;
   userName: string;
   patientName?: string;
-  crewSummary?: string;
+  crew?: CrewBrief[];
   displayVitals?: {
     heartRate: number;
     hrv: number;
@@ -60,6 +71,13 @@ type CopilotContextValue = {
 };
 
 const CopilotContext = createContext<CopilotContextValue | null>(null);
+
+const MISSION_EPOCH = Date.UTC(2026, 0, 15);
+
+function missionDay() {
+  return Math.floor((Date.now() - MISSION_EPOCH) / 86_400_000) + 1;
+}
+
 
 export function CopilotProvider({ children }: { children: ReactNode }) {
   const [session, setSessionState] = useState<CopilotSession | null>(null);
@@ -144,46 +162,58 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       } else {
         // A 1B model follows short, explicit rules and labelled data far better than one
         // dense sentence, and it invents facts unless told to stick to the data given.
+        // Send detail only about the people the question is about: the whole crew's data,
+        // profiles and protocols made prefill take minutes on a laptop GPU and confused
+        // the model about who was who.
         const patient = session?.patientName ?? userName;
-        const shown = session?.displayVitals;
-        // Onboard protocols for this question, plus any triggered by out-of-range readings.
+        const crew = session?.crew ?? [];
+        const q = userMsg.toLowerCase();
+        const named = crew.filter((m) => q.includes(m.name.toLowerCase()));
+        const focus = named.length ? named : crew.filter((m) => m.name === patient);
+        const flagged = crew.filter((m) => m.risk !== "GREEN").sort((a, b) => (a.risk === "RED" ? -1 : b.risk === "RED" ? 1 : 0));
+        const detailed = [...focus, ...flagged.filter((m) => !focus.includes(m))].slice(0, 3);
+        const others = crew.filter((m) => !detailed.includes(m));
+
+        const vitalsOf = (m: CrewBrief) =>
+          m.name === patient && session?.displayVitals ? session.displayVitals : m.vitals;
+        const memberLine = (m: CrewBrief) => {
+          const v = vitalsOf(m);
+          if (!v) return `${m.name} (${m.callsign}): no readings yet.`;
+          const usual = m.usualHr != null ? `; usual HR ${m.usualHr}, usual HRV ${m.usualHrv}` : "";
+          const eva = evaRecommendation({ ...v, sleepHours: telemetry.sleepHours, arrhythmia: m.name === patient && telemetry.arrhythmia });
+          return `${m.name} (${m.callsign}): ${describeVitals(v)}${usual}. Status ${riskLabel(m.risk)}. EVA: ${eva}.`;
+        };
+
+        const focusVitals = focus[0] ? vitalsOf(focus[0]) : undefined;
         const protocols = findProtocols(
           userMsg,
-          protocolsForReadings({ ...shown, ppCO2: telemetry.ppCO2, arrhythmia: telemetry.arrhythmia })
+          protocolsForReadings({ ...focusVitals, ppCO2: telemetry.ppCO2, arrhythmia: telemetry.arrhythmia }),
+          2
         );
+        const habitatFlags = [
+          telemetry.ppCO2 > 4 ? `cabin CO2 HIGH (${telemetry.ppCO2.toFixed(1)} mmHg)` : "",
+          telemetry.radiation >= 0.1 ? `cabin radiation HIGH (${telemetry.radiation.toFixed(3)} mSv/h)` : "",
+          telemetry.voiceStress ? "voice stress detected" : "",
+          telemetry.arrhythmia ? `${patient}'s ECG shows an irregular rhythm` : "",
+        ].filter(Boolean);
+
         const system = [
-          "You are the Flight Surgeon Co-Pilot on a Mars transit spacecraft. You help the crew with medical questions.",
-          "Rules:",
-          "- Answer the user's actual question first, directly.",
-          "- Use only the data and onboard protocols below. If they do not answer it, say so; never invent diagnoses, syndromes or numbers.",
-          "- Each value below is already marked (normal), (HIGH) or (LOW). Trust those marks; do not re-judge the numbers.",
-          "- When asked who needs attention, use the 'Needs attention' line and name everyone on it.",
-          "- Base next steps on the onboard protocols. Keep it to 2-5 short sentences, plain text, no lists.",
-          "",
-          "CREW DATA",
-          `Signed-in user: ${userName}.`,
-          `Crew member on screen: ${patient}. Vitals: ${ctx.vitalsSummary}. Status: ${riskLabel(risk)}.${
-            telemetry.arrhythmia ? " ECG shows an irregular rhythm." : ""
-          }`,
-          `EVA readiness for ${patient}: ${evaRecommendation({
-            ...shown,
-            sleepHours: telemetry.sleepHours,
-            arrhythmia: telemetry.arrhythmia,
-          })}.`,
-          session?.crewSummary ?? "",
-          "",
-          "HABITAT",
-          `Cabin ppCO2 ${telemetry.ppCO2.toFixed(1)} mmHg (limit 4.0)${telemetry.ppCO2 > 4 ? " (HIGH)" : " (normal)"}. Radiation ${telemetry.radiation.toFixed(3)} mSv/h${
-            telemetry.radiation >= 0.1 ? " (HIGH)" : " (normal)"
-          }${telemetry.shieldingBoost ? ", shielding/scrubber boost on" : ""}.`,
-          `Exercise today ${telemetry.exerciseMinutes}/${telemetry.exerciseTarget} min. Last sleep ${telemetry.sleepHours} h of ${telemetry.sleepTarget} h target.`,
-          `Cognitive test: ${ctx.pvtSummary}.`,
-          `Latest voice check-in: ${voiceTranscript || "none"}${telemetry.voiceStress ? " (voice stress detected)" : ""}.`,
-          "",
-          "ONBOARD PROTOCOLS",
+          "You are the Flight Surgeon Co-Pilot on a Mars transit spacecraft.",
+          "Rules: answer the question first. Use only the data and protocols below; never invent diagnoses or numbers. Values are already marked (normal)/(HIGH)/(LOW); trust the marks. Check allergies before any medicine. Reply in 2-4 short plain sentences, in the user's language.",
+          `Mission day ${missionDay()}; Earth is 20 min away one way. CMO: Silva. CDR: Vance.`,
+          flagged.length
+            ? `Needs attention, worst first: ${flagged.map((m) => `${m.name} (${riskLabel(m.risk)})`).join(", ")}.`
+            : "Needs attention: nobody.",
+          "CREW:",
+          ...detailed.map(memberLine),
+          others.length ? `All others NOMINAL: ${others.map((m) => m.name).join(", ")}.` : "",
+          ...focus.slice(0, 2).map((m) => describeProfile(m.name)).filter((p): p is string => p !== null),
+          habitatFlags.length ? `Habitat: ${habitatFlags.join("; ")}.` : "Habitat: cabin air and radiation normal.",
+          `Sleep last night ${telemetry.sleepHours} h (target ${telemetry.sleepTarget}). ${ctx.pvtSummary}.`,
+          "PROTOCOLS:",
           ...protocols.map((p) => `${p.title}: ${p.text}`),
         ]
-          .filter((line, i, all) => line !== "" || all[i - 1] !== "")
+          .filter(Boolean)
           .join("\n");
 
         const t0 = performance.now();
@@ -210,7 +240,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
               // Recent turns only: canned basic-mode replies and long history drown out the new question.
               ...messages
                 .filter((msg) => !msg.content.startsWith("[Basic mode"))
-                .slice(-6)
+                .slice(-2)
                 .map((msg) => ({ role: msg.role, content: msg.content })),
               { role: "user", content: userMsg },
             ],

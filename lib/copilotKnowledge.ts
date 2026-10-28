@@ -98,6 +98,24 @@ export const PROTOCOLS: ProtocolCard[] = [
     text: "Mean reaction time around 250-350 ms is typical. Slower times or several lapses over 500 ms point to fatigue, sleep loss or high CO2. Repeat after rest; avoid critical tasks while scores are poor.",
   },
   {
+    id: "medkit",
+    title: "Onboard medical kit (adult doses, given by the CMO)",
+    keywords: ["medicine", "medication", "drug", "pill", "dose", "take", "painkiller", "pain", "ibuprofen", "acetaminophen", "paracetamol", "tylenol", "promethazine", "meclizine", "melatonin", "loratadine", "antihistamine", "kit"],
+    text: "Pain/fever: acetaminophen 500-1000 mg every 6 h (max 3 g/day), or ibuprofen 400 mg every 6-8 h with food (never if NSAID allergy, asthma flare or bleeding). Motion sickness: meclizine 25 mg, or promethazine 25 mg for severe cases (causes drowsiness, no EVA for 12 h). Sleep: melatonin 3 mg. Allergy: loratadine 10 mg daily; epinephrine auto-injector for anaphylaxis. Oral rehydration salts for dehydration. Always check the crew member's allergies first.",
+  },
+  {
+    id: "allergy",
+    title: "Allergic reaction",
+    keywords: ["allerg", "rash", "hives", "swelling", "anaphyla", "itch", "wheez"],
+    text: "Mild (rash, itching): stop the suspected trigger, give loratadine, monitor. Severe (throat or face swelling, wheezing, low blood pressure, falling SpO2): epinephrine auto-injector into the thigh immediately, oxygen, call the CMO and CDR, repeat epinephrine after 5-15 min if no improvement.",
+  },
+  {
+    id: "comms",
+    title: "Ground support and communication delay",
+    keywords: ["ground", "earth", "mission control", "doctor", "surgeon", "delay", "consult", "call"],
+    text: "Earth is about 20 minutes away one way, so any question to the ground surgeon takes 40+ minutes to answer. Urgent care must start onboard with the CMO and CDR; send the ground a time-stamped summary of vitals, symptoms and actions taken.",
+  },
+  {
     id: "eva",
     title: "EVA readiness",
     keywords: ["eva", "spacewalk", "suit", "go for eva", "fit for"],
