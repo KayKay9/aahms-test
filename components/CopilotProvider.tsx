@@ -10,6 +10,8 @@ import {
 } from "react";
 import { assessRisk, describeVitals, riskLabel, type RiskLevel } from "@/lib/risk";
 import { generateCopilotFallback } from "@/lib/copilotFallback";
+import { evaRecommendation, findProtocols, protocolsForReadings } from "@/lib/copilotKnowledge";
+import { useMissionTelemetry } from "@/components/MissionTelemetryProvider";
 import { getLatestForUser } from "@/lib/db";
 import { getPvtSummary } from "@/components/PVTTest";
 import type { CopilotChatMessage } from "@/components/CopilotChat";
@@ -65,6 +67,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<CopilotChatMessage[]>([]);
   const [input, setInput] = useState("");
   const llm = useWebLLM();
+  const telemetry = useMissionTelemetry();
   const engineStatus = llm.status;
   const [inferMs, setInferMs] = useState<number | null>(null);
   const [isSending, setIsSending] = useState(false);
@@ -142,22 +145,45 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         // A 1B model follows short, explicit rules and labelled data far better than one
         // dense sentence, and it invents facts unless told to stick to the data given.
         const patient = session?.patientName ?? userName;
+        const shown = session?.displayVitals;
+        // Onboard protocols for this question, plus any triggered by out-of-range readings.
+        const protocols = findProtocols(
+          userMsg,
+          protocolsForReadings({ ...shown, ppCO2: telemetry.ppCO2, arrhythmia: telemetry.arrhythmia })
+        );
         const system = [
           "You are the Flight Surgeon Co-Pilot on a Mars transit spacecraft. You help the crew with medical questions.",
           "Rules:",
           "- Answer the user's actual question first, directly.",
-          "- Use only the data below. If the data does not answer it, say so; never invent diagnoses, syndromes or numbers.",
+          "- Use only the data and onboard protocols below. If they do not answer it, say so; never invent diagnoses, syndromes or numbers.",
           "- Each value below is already marked (normal), (HIGH) or (LOW). Trust those marks; do not re-judge the numbers.",
-          "- When asked who needs attention, name every crew member whose status is WARNING or CAUTION, worst first.",
-          "- Give practical next steps when something is out of range. Keep it to 2-5 short sentences, plain text.",
+          "- When asked who needs attention, use the 'Needs attention' line and name everyone on it.",
+          "- Base next steps on the onboard protocols. Keep it to 2-5 short sentences, plain text, no lists.",
           "",
+          "CREW DATA",
           `Signed-in user: ${userName}.`,
-          `Crew member on screen: ${patient}. Vitals: ${ctx.vitalsSummary}. Status: ${riskLabel(risk)}.`,
-          session?.crewSummary ? `Whole crew:\n${session.crewSummary}` : "",
+          `Crew member on screen: ${patient}. Vitals: ${ctx.vitalsSummary}. Status: ${riskLabel(risk)}.${
+            telemetry.arrhythmia ? " ECG shows an irregular rhythm." : ""
+          }`,
+          `EVA readiness for ${patient}: ${evaRecommendation({
+            ...shown,
+            sleepHours: telemetry.sleepHours,
+            arrhythmia: telemetry.arrhythmia,
+          })}.`,
+          session?.crewSummary ?? "",
+          "",
+          "HABITAT",
+          `Cabin ppCO2 ${telemetry.ppCO2.toFixed(1)} mmHg (limit 4.0)${telemetry.ppCO2 > 4 ? " (HIGH)" : " (normal)"}. Radiation ${telemetry.radiation.toFixed(3)} mSv/h${
+            telemetry.radiation >= 0.1 ? " (HIGH)" : " (normal)"
+          }${telemetry.shieldingBoost ? ", shielding/scrubber boost on" : ""}.`,
+          `Exercise today ${telemetry.exerciseMinutes}/${telemetry.exerciseTarget} min. Last sleep ${telemetry.sleepHours} h of ${telemetry.sleepTarget} h target.`,
           `Cognitive test: ${ctx.pvtSummary}.`,
-          `Latest voice check-in: ${voiceTranscript || "none"}.`,
+          `Latest voice check-in: ${voiceTranscript || "none"}${telemetry.voiceStress ? " (voice stress detected)" : ""}.`,
+          "",
+          "ONBOARD PROTOCOLS",
+          ...protocols.map((p) => `${p.title}: ${p.text}`),
         ]
-          .filter(Boolean)
+          .filter((line, i, all) => line !== "" || all[i - 1] !== "")
           .join("\n");
 
         const t0 = performance.now();
@@ -174,6 +200,13 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
           const stream = await getEngine()!.chat.completions.create({
             messages: [
               { role: "system", content: system },
+              // One worked example shows the 1B model the expected length and grounding.
+              { role: "user", content: "Is Park okay?" },
+              {
+                role: "assistant",
+                content:
+                  "Yes. Park's heart rate, SpO2 and HRV are all normal and the status is NOMINAL. No action needed; keep routine monitoring.",
+              },
               // Recent turns only: canned basic-mode replies and long history drown out the new question.
               ...messages
                 .filter((msg) => !msg.content.startsWith("[Basic mode"))
@@ -216,6 +249,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     session,
     risk,
     voiceTranscript,
+    telemetry,
   ]);
 
   const toggleChat = useCallback(() => setChatOpen((o) => !o), []);

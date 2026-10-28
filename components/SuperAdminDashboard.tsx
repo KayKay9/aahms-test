@@ -102,19 +102,26 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
   const crewRisks = members.map((m) => m.risk);
 
   // One line per crew member, so the co-pilot can answer about anyone, not just the selected card.
-  const crewSummary = useMemo(
-    () =>
-      (data?.crews ?? [])
-        .flatMap((c) => c.members)
-        .filter((m) => user.role === "COMMANDER" || m.user.crewId === user.crewId)
-        .map((m) =>
-          m.latest
-            ? `${m.user.name} (${m.user.callsign}, ${m.user.crewId}): ${describeVitals({ ...m.latest, hrv: m.latest.hrv ?? 60 })}, status ${riskLabel(m.risk)}`
-            : `${m.user.name} (${m.user.callsign}, ${m.user.crewId}): no readings yet`
-        )
-        .join("\n"),
-    [data, user]
-  );
+  // The "needs attention" line is worked out here rather than left to the model to spot.
+  const crewSummary = useMemo(() => {
+    const visible = (data?.crews ?? [])
+      .flatMap((c) => c.members)
+      .filter((m) => user.role === "COMMANDER" || m.user.crewId === user.crewId);
+    const roster = visible.map((m) =>
+      m.latest
+        ? `${m.user.name} (${m.user.callsign}, ${m.user.crewId}): ${describeVitals({ ...m.latest, hrv: m.latest.hrv ?? 60 })}, status ${riskLabel(m.risk)}`
+        : `${m.user.name} (${m.user.callsign}, ${m.user.crewId}): no readings yet`
+    );
+    const severity = { RED: 0, YELLOW: 1, GREEN: 2 } as const;
+    const flagged = visible
+      .filter((m) => m.risk !== "GREEN")
+      .sort((a, b) => severity[a.risk] - severity[b.risk])
+      .map((m) => `${m.user.name} (${riskLabel(m.risk)})`);
+    const attention = flagged.length
+      ? `Needs attention, worst first: ${flagged.join(", ")}.`
+      : "Needs attention: nobody, all crew NOMINAL.";
+    return [attention, ...roster].join("\n");
+  }, [data, user]);
   const canWrite =
     user.role === "ASTRONAUT" && selectedId === user.userId;
 
