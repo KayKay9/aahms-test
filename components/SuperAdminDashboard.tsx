@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionUser } from "@/lib/auth";
-import { assessRisk, type RiskLevel } from "@/lib/risk";
+import { assessRisk, describeVitals, riskLabel, type RiskLevel } from "@/lib/risk";
 import { MissionHeader } from "./MissionHeader";
 import { OfflineAICopilot } from "./OfflineAICopilot";
 import { CrewOverview, type CrewMemberView } from "./CrewOverview";
@@ -100,6 +100,21 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
     .find((m) => m.user.id === selectedId)?.latest;
 
   const crewRisks = members.map((m) => m.risk);
+
+  // One line per crew member, so the co-pilot can answer about anyone, not just the selected card.
+  const crewSummary = useMemo(
+    () =>
+      (data?.crews ?? [])
+        .flatMap((c) => c.members)
+        .filter((m) => user.role === "COMMANDER" || m.user.crewId === user.crewId)
+        .map((m) =>
+          m.latest
+            ? `${m.user.name} (${m.user.callsign}, ${m.user.crewId}): ${describeVitals({ ...m.latest, hrv: m.latest.hrv ?? 60 })}, status ${riskLabel(m.risk)}`
+            : `${m.user.name} (${m.user.callsign}, ${m.user.crewId}): no readings yet`
+        )
+        .join("\n"),
+    [data, user]
+  );
   const canWrite =
     user.role === "ASTRONAUT" && selectedId === user.userId;
 
@@ -192,6 +207,8 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
         <OfflineAICopilot
           userId={user.userId}
           userName={user.name}
+          patientName={selectedMember?.name}
+          crewSummary={crewSummary}
           displayVitals={
             selectedMember
               ? {

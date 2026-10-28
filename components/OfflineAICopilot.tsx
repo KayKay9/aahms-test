@@ -11,6 +11,9 @@ import { modelLabel } from "@/lib/webllm/engine";
 type OfflineAICopilotProps = {
   userId: string;
   userName: string;
+  /** The crew member whose vitals are on screen (may differ from the signed-in user). */
+  patientName?: string;
+  crewSummary?: string;
   displayVitals?: {
     heartRate: number;
     hrv: number;
@@ -28,6 +31,8 @@ const RISK_TONE = {
 export function OfflineAICopilot({
   userId,
   userName,
+  patientName,
+  crewSummary,
   displayVitals,
 }: OfflineAICopilotProps) {
   const { voiceStress } = useMissionTelemetry();
@@ -48,8 +53,8 @@ export function OfflineAICopilot({
   } = useCopilot();
 
   useEffect(() => {
-    setSession({ userId, userName, displayVitals });
-  }, [userId, userName, displayVitals, setSession]);
+    setSession({ userId, userName, patientName, crewSummary, displayVitals });
+  }, [userId, userName, patientName, crewSummary, displayVitals, setSession]);
 
   const stressFromHrv = displayVitals?.hrv ?? 62;
   let stressIndex = Math.max(0, Math.min(100, Math.round(100 - stressFromHrv)));

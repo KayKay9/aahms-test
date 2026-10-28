@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { assessRisk, riskLabel, type RiskLevel } from "@/lib/risk";
+import { assessRisk, describeVitals, riskLabel, type RiskLevel } from "@/lib/risk";
 import { generateCopilotFallback } from "@/lib/copilotFallback";
 import { getLatestForUser } from "@/lib/db";
 import { getPvtSummary } from "@/components/PVTTest";
@@ -23,6 +23,8 @@ import {
 export type CopilotSession = {
   userId: string;
   userName: string;
+  patientName?: string;
+  crewSummary?: string;
   displayVitals?: {
     heartRate: number;
     hrv: number;
@@ -97,12 +99,11 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
     const userId = session?.userId ?? "";
     const userName = session?.userName ?? "Crew";
     const displayVitals = session?.displayVitals;
-    const latest = userId ? await getLatestForUser(userId) : undefined;
-    const vitalsCtx = latest
-      ? `HR ${latest.heartRate}, HRV ${Math.round(latest.hrv)}, SpO₂ ${Math.round(latest.spo2)}%, rad ${latest.radiation.toFixed(3)} mSv/h`
-      : displayVitals
-        ? `HR ${displayVitals.heartRate}, HRV ${displayVitals.hrv}, SpO₂ ${displayVitals.spo2}%`
-        : "no local vitals cached";
+    // Prefer what is on screen: the local queue holds the signed-in user's own readings,
+    // which are stale or unrelated when viewing another crew member.
+    const latest = !displayVitals && userId ? await getLatestForUser(userId) : undefined;
+    const shown = displayVitals ?? latest;
+    const vitalsCtx = shown ? describeVitals(shown) : "no vitals available";
 
     return {
       userName,
@@ -125,15 +126,39 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
       let assistantContent: string;
       const userName = session?.userName ?? "Crew";
 
-      if (engineStatus === "loading") {
-        assistantContent = generateCopilotFallback(userMsg, {
-          ...ctx,
-          webLlmReady: false,
-        });
-      } else if (engineStatus !== "ready" || !getEngine()) {
+      // While the model is still warming up, wait for it rather than replying with a canned
+      // rule-based answer that ignores the question.
+      if (engineStatus === "loading" || engineStatus === "idle") {
+        setMessages((m) => [
+          ...m,
+          { role: "assistant", content: "Warming up the on-device AI, your answer will appear here shortly…", streaming: true },
+        ]);
+        await preloadEngine();
+      }
+
+      if (!getEngine()) {
         assistantContent = generateCopilotFallback(userMsg, ctx);
       } else {
-        const system = `You are the Flight Surgeon Co-Pilot on a Mars transit vehicle. Answer in 2-4 short sentences for crew health questions. Crew: ${userName}. Vitals: ${ctx.vitalsSummary}. Risk: ${riskLabel(risk)}. ${ctx.pvtSummary}. Voice: ${voiceTranscript}.`;
+        // A 1B model follows short, explicit rules and labelled data far better than one
+        // dense sentence, and it invents facts unless told to stick to the data given.
+        const patient = session?.patientName ?? userName;
+        const system = [
+          "You are the Flight Surgeon Co-Pilot on a Mars transit spacecraft. You help the crew with medical questions.",
+          "Rules:",
+          "- Answer the user's actual question first, directly.",
+          "- Use only the data below. If the data does not answer it, say so; never invent diagnoses, syndromes or numbers.",
+          "- Each value below is already marked (normal), (HIGH) or (LOW). Trust those marks; do not re-judge the numbers.",
+          "- When asked who needs attention, name every crew member whose status is WARNING or CAUTION, worst first.",
+          "- Give practical next steps when something is out of range. Keep it to 2-5 short sentences, plain text.",
+          "",
+          `Signed-in user: ${userName}.`,
+          `Crew member on screen: ${patient}. Vitals: ${ctx.vitalsSummary}. Status: ${riskLabel(risk)}.`,
+          session?.crewSummary ? `Whole crew:\n${session.crewSummary}` : "",
+          `Cognitive test: ${ctx.pvtSummary}.`,
+          `Latest voice check-in: ${voiceTranscript || "none"}.`,
+        ]
+          .filter(Boolean)
+          .join("\n");
 
         const t0 = performance.now();
         // Stream tokens into the chat so the crew sees the answer forming instead of
@@ -149,11 +174,15 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
           const stream = await getEngine()!.chat.completions.create({
             messages: [
               { role: "system", content: system },
-              ...messages.map((msg) => ({ role: msg.role, content: msg.content })),
+              // Recent turns only: canned basic-mode replies and long history drown out the new question.
+              ...messages
+                .filter((msg) => !msg.content.startsWith("[Basic mode"))
+                .slice(-6)
+                .map((msg) => ({ role: msg.role, content: msg.content })),
               { role: "user", content: userMsg },
             ],
-            temperature: 0.4,
-            max_tokens: 160,
+            temperature: 0.2,
+            max_tokens: 320,
             stream: true,
           });
           let text = "";
@@ -162,7 +191,10 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
             if (text) showPartial(text);
           }
           setInferMs(Math.round(performance.now() - t0));
-          assistantContent = text.trim() || generateCopilotFallback(userMsg, ctx);
+          // Small models sometimes wrap the whole reply in quotes or add markdown bold,
+          // which the chat shows as raw characters.
+          const cleaned = text.trim().replace(/^"([\s\S]*)"$/, "$1").replace(/\*\*/g, "");
+          assistantContent = cleaned || generateCopilotFallback(userMsg, ctx);
         } catch {
           assistantContent = generateCopilotFallback(userMsg, ctx);
         }
