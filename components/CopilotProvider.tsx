@@ -10,6 +10,7 @@ import {
 } from "react";
 import { assessRisk, describeVitals, riskLabel, type RiskLevel } from "@/lib/risk";
 import { generateCopilotFallback } from "@/lib/copilotFallback";
+import { describeCheck, getLatestCheck } from "@/lib/selfCheck";
 import { evaRecommendation, findProtocols, protocolsForReadings } from "@/lib/copilotKnowledge";
 import { useMissionTelemetry } from "@/components/MissionTelemetryProvider";
 import { describeProfile } from "@/lib/crewProfiles";
@@ -210,6 +211,7 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
           ...focus.slice(0, 2).map((m) => describeProfile(m.name)).filter((p): p is string => p !== null),
           habitatFlags.length ? `Habitat: ${habitatFlags.join("; ")}.` : "Habitat: cabin air and radiation normal.",
           `Sleep last night ${telemetry.sleepHours.toFixed(1)} h (target ${telemetry.sleepTarget}). Exercise today ${telemetry.exerciseMinutes}/${telemetry.exerciseTarget} min. ${ctx.pvtSummary}.`,
+          describeCheck(getLatestCheck(session?.userId ?? "")),
           "PROTOCOLS:",
           ...protocols.map((p) => `${p.title}: ${p.text}`),
         ]

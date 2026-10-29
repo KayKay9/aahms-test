@@ -12,6 +12,8 @@ import { ExerciseSleep } from "./ExerciseSleep";
 import { PVTTest } from "./PVTTest";
 import { StoreForwardQueue } from "./StoreForwardQueue";
 import { SyncEngine } from "./SyncEngine";
+import { DailySelfCheck } from "./DailySelfCheck";
+import { SelfCheckDue } from "./SelfCheckDue";
 import { TabBar } from "./ui/TabBar";
 import { useSync } from "./SyncContext";
 import { CopilotProvider, type CrewBrief } from "./CopilotProvider";
@@ -131,6 +133,7 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
 
   const tabs = [
     { id: "telemetry", label: "Crew vitals" },
+    { id: "check", label: "Daily check" },
     { id: "habitat", label: "Habitat & routine" },
     { id: "pvt", label: "Cognitive test" },
     { id: "queue", label: "Sync queue", badge: unsyncedCount || undefined },
@@ -161,6 +164,7 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
       <div className="mx-auto grid w-full max-w-[1400px] flex-1 gap-6 p-4 pb-24 md:p-6 md:pb-24 lg:grid-cols-[minmax(0,1fr)_340px]">
         <main className="flex min-w-0 flex-col gap-5">
           <TabBar tabs={tabs} active={tab} onChange={setTab} />
+          {tab === "telemetry" && <SelfCheckDue userId={user.userId} onStart={() => setTab("check")} />}
 
           {tab === "telemetry" && (
             <>
@@ -203,6 +207,10 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
                 }
               />
             </>
+          )}
+
+          {tab === "check" && (
+            <DailySelfCheck userId={user.userId} userName={user.name} onDone={() => setTab("telemetry")} />
           )}
 
           {tab === "habitat" && (
