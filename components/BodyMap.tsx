@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Card } from "./ui/Card";
 import { useMissionTelemetry } from "@/components/MissionTelemetryProvider";
 import { riskLabel, type RiskLevel } from "@/lib/risk";
-import { assessBody, type RegionId } from "@/lib/bodyMap";
+import { assessBody, assessHazards, type HazardId, type RegionId } from "@/lib/bodyMap";
+import { useMissionMode } from "./MissionModeContext";
+import { markBodyMapSeen } from "@/lib/missions";
 import { getLatestCheck, type StoredCheck } from "@/lib/selfCheck";
 
 const MISSION_EPOCH = Date.UTC(2026, 0, 15);
@@ -62,10 +64,11 @@ export function BodyMap({
   onOpenSelfCheck: () => void;
 }) {
   const t = useMissionTelemetry();
+  const { mode } = useMissionMode();
+  useEffect(() => markBodyMapSeen(userId), [userId]);
   const client = useClientInputs(userId);
-  const regions = useMemo(
-    () =>
-      assessBody({
+  const inputs = useMemo(
+    () => ({
         heartRate: vitals.heartRate,
         hrv: vitals.hrv,
         spo2: vitals.spo2,
@@ -83,6 +86,11 @@ export function BodyMap({
       }),
     [vitals, t, client]
   );
+  const regions = useMemo(() => assessBody(inputs), [inputs]);
+  const hazards = useMemo(() => assessHazards(inputs, regions, mode === "space"), [inputs, regions, mode]);
+  const [hazardId, setHazardId] = useState<HazardId | null>(null);
+  const hazard = hazards.find((h) => h.id === hazardId) ?? null;
+  const inHazard = (id: RegionId) => !hazard || hazard.regions.includes(id);
 
   const order: RiskLevel[] = ["RED", "YELLOW", "GREEN"];
   const worstId = [...regions].sort((a, b) => order.indexOf(a.level) - order.indexOf(b.level))[0].id;
@@ -94,6 +102,40 @@ export function BodyMap({
 
   return (
     <Card title={`Body map · ${name}`}>
+      {/* NASA HRP's five hazards; picking one highlights the body systems it affects */}
+      <div className="mb-5">
+        <div className="grid grid-cols-5 gap-2" role="group" aria-label="Five hazards of human spaceflight">
+          {hazards.map((h) => {
+            const on = hazardId === h.id;
+            return (
+              <button
+                key={h.id}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setHazardId(on ? null : h.id)}
+                className={`flex min-h-16 flex-col items-start gap-0.5 rounded-lg border px-2.5 py-2 text-left transition ${
+                  on ? `${TONE[h.level].ring} ${TONE[h.level].bg}` : "border-mc-line bg-mc-inset hover:border-mc-line-strong"
+                }`}
+              >
+                <span className="flex w-full items-center justify-between">
+                  <span className="font-mono text-lg font-semibold leading-none">{h.letter}</span>
+                  <span className="h-2 w-2 rounded-full" style={{ background: TONE[h.level].fill }} aria-hidden />
+                </span>
+                <span className="text-[11px] font-medium leading-tight text-mc-soft">{h.name}</span>
+              </button>
+            );
+          })}
+        </div>
+        {hazard ? (
+          <p className="mt-2 rounded-md border border-mc-line bg-mc-inset px-3 py-2 text-[13px] leading-relaxed text-mc-soft">
+            <span className={`font-semibold ${TONE[hazard.level].text}`}>{hazard.name}: </span>
+            <span className="font-mono text-xs text-mc-muted">{hazard.now}.</span> {hazard.about}{" "}
+            <span className="text-mc-label">Highlighted: {hazard.regions.map((r) => byId[r].name).join(", ")}.</span>
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-mc-label">NASA&apos;s five hazards of spaceflight (RIDGE). Pick one to see which body systems it affects.</p>
+        )}
+      </div>
       <div className="grid gap-6 lg:grid-cols-[minmax(240px,320px)_1fr]">
         {/* Figure */}
         <div className="relative mx-auto aspect-[1/2] w-full max-w-[300px]">
@@ -151,7 +193,7 @@ export function BodyMap({
                 onClick={() => setPicked(r.id)}
                 aria-pressed={on}
                 aria-label={`${r.name}: ${riskLabel(r.level)}`}
-                className={`group absolute flex -translate-y-1/2 items-center gap-1.5 ${s.side === "left" ? "-translate-x-full flex-row-reverse" : ""}`}
+                className={`group absolute flex -translate-y-1/2 items-center gap-1.5 transition-opacity ${s.side === "left" ? "-translate-x-full flex-row-reverse" : ""} ${inHazard(r.id) ? "" : "opacity-25"}`}
                 style={{ left: `${s.x}%`, top: `${s.y}%` }}
               >
                 <span className="relative flex h-4 w-4 items-center justify-center">

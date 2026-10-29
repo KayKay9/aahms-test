@@ -239,3 +239,80 @@ export function assessBody(x: BodyInputs): RegionStatus[] {
     },
   ];
 }
+
+// --- NASA HRP's five hazards of human spaceflight ("RIDGE"), linked to body regions.
+
+export type HazardId = "radiation" | "isolation" | "distance" | "gravity" | "environment";
+
+export type HazardStatus = {
+  id: HazardId;
+  letter: string;
+  name: string;
+  level: RiskLevel;
+  now: string;
+  about: string;
+  regions: RegionId[];
+};
+
+export function assessHazards(x: BodyInputs, regions: RegionStatus[], spaceMode: boolean): HazardStatus[] {
+  const lvl = (id: RegionId) => regions.find((r) => r.id === id)!.level;
+  const radLevel: RiskLevel = x.doseRate > 1 ? "RED" : x.doseRate > 0.1 ? "YELLOW" : "GREEN";
+  const mood = x.check?.items.find((i) => i.id === "mood") ?? null;
+  const isolationLevel = worst([mood?.level ?? null, x.voiceStress ? "YELLOW" : null, x.sleepHours < 5 ? "RED" : x.sleepHours < 7 ? "YELLOW" : "GREEN"]);
+  const anyRed = regions.some((r) => r.level === "RED");
+  const co2Level: RiskLevel = x.ppCO2 > 4 ? "RED" : x.ppCO2 > 3 ? "YELLOW" : "GREEN";
+  const temp = x.check?.items.find((i) => i.id === "temperature") ?? null;
+
+  return [
+    {
+      id: "radiation",
+      letter: "R",
+      name: "Radiation",
+      level: radLevel,
+      now: `${x.doseRate.toFixed(3)} mSv/h${radLevel === "RED" ? " · shelter now" : radLevel === "YELLOW" ? " · above background" : " · background"}`,
+      about:
+        "Outside Earth's magnetic field, galactic cosmic rays and solar particle events raise cancer risk and can damage the brain, heart and blood-forming cells.",
+      regions: ["blood", "brain", "heart"],
+    },
+    {
+      id: "isolation",
+      letter: "I",
+      name: "Isolation & confinement",
+      level: isolationLevel,
+      now: mood ? `mood ${mood.display}` : x.voiceStress ? "voice stress elevated" : "no mood check today",
+      about:
+        "Months in a small crew and a closed volume wear on mood, sleep and teamwork. Daily mood tracking and protected off-duty time catch problems early.",
+      regions: ["brain"],
+    },
+    {
+      id: "distance",
+      letter: "D",
+      name: "Distance from Earth",
+      level: spaceMode && anyRed ? "YELLOW" : "GREEN",
+      now: spaceMode ? "20 min one-way delay · no evacuation" : "link to Earth available",
+      about:
+        "Help is 20 minutes away by radio and months away in person. The crew must assess and treat themselves, which is why the on-board co-pilot and protocols exist.",
+      regions: ["brain", "heart", "lungs", "blood", "eyes", "musculoskeletal"],
+    },
+    {
+      id: "gravity",
+      letter: "G",
+      name: "Gravity fields",
+      level: worst([lvl("musculoskeletal"), lvl("eyes"), lvl("heart") === "RED" ? "YELLOW" : null]),
+      now: `day ${x.missionDay} in microgravity`,
+      about:
+        "Weightlessness unloads bones and muscles, shifts fluid toward the head (vision changes) and deconditions the heart. Switching between gravity levels causes dizziness and fainting.",
+      regions: ["musculoskeletal", "eyes", "heart", "blood"],
+    },
+    {
+      id: "environment",
+      letter: "E",
+      name: "Hostile closed environment",
+      level: worst([co2Level, temp?.level ?? null]),
+      now: `CO₂ ${x.ppCO2.toFixed(1)} mmHg${temp ? ` · temp ${temp.display}` : ""}`,
+      about:
+        "Recycled air, CO₂ build-up, noise, microbes and a weakened immune system make the cabin itself a health risk. Air quality and fever are watched daily.",
+      regions: ["lungs", "brain", "blood"],
+    },
+  ];
+}
