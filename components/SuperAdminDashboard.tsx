@@ -13,6 +13,7 @@ import { PVTTest } from "./PVTTest";
 import { StoreForwardQueue } from "./StoreForwardQueue";
 import { SyncEngine } from "./SyncEngine";
 import { DailySelfCheck } from "./DailySelfCheck";
+import { BodyMap } from "./BodyMap";
 import { SelfCheckDue } from "./SelfCheckDue";
 import { TabBar } from "./ui/TabBar";
 import { useSync } from "./SyncContext";
@@ -133,6 +134,7 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
 
   const tabs = [
     { id: "telemetry", label: "Crew vitals" },
+    { id: "body", label: "Body map" },
     { id: "check", label: "Daily check" },
     { id: "habitat", label: "Habitat & routine" },
     { id: "pvt", label: "Cognitive test" },
@@ -207,6 +209,20 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
                 }
               />
             </>
+          )}
+
+          {tab === "body" && (
+            <BodyMap
+              userId={user.userId}
+              name={selectedMember?.name ?? user.name}
+              vitals={{
+                heartRate: selectedMember?.heartRate ?? selectedServer?.heartRate ?? 72,
+                hrv: selectedMember?.hrv ?? selectedServer?.hrv ?? 60,
+                spo2: selectedServer?.spo2 ?? 98,
+                radiation: selectedServer?.radiation ?? 0.075,
+              }}
+              onOpenSelfCheck={() => setTab("check")}
+            />
           )}
 
           {tab === "check" && (
