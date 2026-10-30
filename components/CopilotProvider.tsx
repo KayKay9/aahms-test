@@ -14,6 +14,8 @@ import { describeCheck, getLatestCheck } from "@/lib/selfCheck";
 import { evaRecommendation, findProtocols, protocolsForReadings } from "@/lib/copilotKnowledge";
 import { useMissionTelemetry } from "@/components/MissionTelemetryProvider";
 import { describeProfile } from "@/lib/crewProfiles";
+import { INJURY_TYPES, getInjuries } from "@/lib/injuries";
+import { getCycleLog, summarize } from "@/lib/periods";
 import { getLatestForUser } from "@/lib/db";
 import { getPvtSummary } from "@/components/PVTTest";
 import type { CopilotChatMessage } from "@/components/CopilotChat";
@@ -186,9 +188,33 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
         };
 
         const focusVitals = focus[0] ? vitalsOf(focus[0]) : undefined;
+        // Open injuries reported on the body map, for the people the question is about.
+        const injuryLines = focus.slice(0, 2).flatMap((m) =>
+          getInjuries(m.name)
+            .filter((i) => !i.healed)
+            .map((i) => {
+              const last = i.updates[i.updates.length - 1];
+              return `${m.name} injury: ${INJURY_TYPES[i.type].label.toLowerCase()} on ${i.area.toLowerCase()}, pain ${last?.pain ?? "?"}/10${last?.note ? ` (${last.note})` : ""}.`;
+            })
+        );
+        // Logged period days (female figure only logs these), so period questions get real context.
+        const cycleLines = focus.slice(0, 2).flatMap((m) => {
+          const log = getCycleLog(m.name);
+          if (!log.days.length && !log.suppressed) return [];
+          const c = summarize(log);
+          const last = [...log.days].sort((x, y) => y.date.localeCompare(x.date))[0];
+          return [
+            `${m.name} cycle: ${log.suppressed ? "on hormone suppression" : "not suppressed"}${c.cycleDay ? `, cycle day ${c.cycleDay}` : ""}${
+              last ? `, last logged ${last.date}: ${last.flow} flow, pain ${last.pain}/10${last.symptoms.length ? `, ${last.symptoms.join(", ").toLowerCase()}` : ""}` : ""
+            }${c.alerts.length ? `. Alerts: ${c.alerts.map((x) => x.text.split(".")[0]).join("; ")}` : ""}.`,
+          ];
+        });
+        const injuryCards = focus
+          .slice(0, 1)
+          .flatMap((m) => getInjuries(m.name).filter((i) => !i.healed).map((i) => `injury-${i.type}`));
         const protocols = findProtocols(
           userMsg,
-          protocolsForReadings({ ...focusVitals, ppCO2: telemetry.ppCO2, arrhythmia: telemetry.arrhythmia }),
+          [...injuryCards, ...protocolsForReadings({ ...focusVitals, ppCO2: telemetry.ppCO2, arrhythmia: telemetry.arrhythmia })],
           2
         );
         const habitatFlags = [
@@ -209,6 +235,8 @@ export function CopilotProvider({ children }: { children: ReactNode }) {
           ...detailed.map(memberLine),
           others.length ? `All others NOMINAL: ${others.map((m) => m.name).join(", ")}.` : "",
           ...focus.slice(0, 2).map((m) => describeProfile(m.name)).filter((p): p is string => p !== null),
+          ...injuryLines,
+          ...cycleLines,
           habitatFlags.length ? `Habitat: ${habitatFlags.join("; ")}.` : "Habitat: cabin air and radiation normal.",
           `Sleep last night ${telemetry.sleepHours.toFixed(1)} h (target ${telemetry.sleepTarget}). Exercise today ${telemetry.exerciseMinutes}/${telemetry.exerciseTarget} min. ${ctx.pvtSummary}.`,
           describeCheck(getLatestCheck(session?.userId ?? "")),

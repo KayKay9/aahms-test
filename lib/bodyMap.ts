@@ -8,7 +8,7 @@ import type { StoredCheck } from "@/lib/selfCheck";
  * from NASA Human Research Program risk summaries, not medical advice.
  */
 
-export type RegionId = "brain" | "eyes" | "heart" | "lungs" | "blood" | "musculoskeletal";
+export type RegionId = "brain" | "eyes" | "heart" | "lungs" | "blood" | "musculoskeletal" | "reproductive";
 
 export type Reading = { label: string; value: string; level: RiskLevel | null };
 
@@ -38,6 +38,7 @@ export type BodyInputs = {
   pvt: { mean: number; lapses: number } | null;
   check: StoredCheck | null;
   missionDay: number;
+  sex: "male" | "female";
 };
 
 const worst = (levels: (RiskLevel | null)[]): RiskLevel =>
@@ -143,6 +144,35 @@ export function assessBody(x: BodyInputs): RegionStatus[] {
   const boneLoss = months * 1.25 * (1 - 0.7 * adherence);
   const boneLevel: RiskLevel = boneLoss > 6 ? "YELLOW" : "GREEN";
 
+  // --- Reproductive & urinary: radiation-sensitive organs, urinary retention, UTIs, kidney stones
+  const reproRad: RiskLevel = x.doseRate > 1 ? "RED" : x.doseRate > 0.1 ? "YELLOW" : "GREEN";
+  const reproTemp = temp && temp.level !== "GREEN" ? temp.level : null;
+  const female = x.sex === "female";
+  const reproductive: RegionStatus = {
+    id: "reproductive",
+    name: female ? "Breasts, reproductive & urinary" : "Reproductive & urinary",
+    level: worst([reproRad, reproTemp, boneLevel === "YELLOW" ? "YELLOW" : null]),
+    readings: [
+      { label: "Radiation dose rate", value: `${x.doseRate.toFixed(3)} mSv/h`, level: reproRad },
+      { label: "Temperature (infection)", value: temp?.display ?? notDone, level: temp?.level ?? null },
+      { label: "Kidney-stone risk", value: boneLevel === "YELLOW" ? "raised (bone calcium)" : "normal", level: boneLevel === "YELLOW" ? "YELLOW" : "GREEN" },
+    ],
+    role: female
+      ? "Breasts, ovaries and uterus (hormones and fertility), plus kidneys and bladder, which filter blood and remove waste."
+      : "Testes and prostate (hormones and fertility), plus kidneys and bladder, which filter blood and remove waste.",
+    space: female
+      ? "Ovaries and breast tissue are sensitive to radiation, which raises long-term cancer risk. Many astronauts suppress periods with hormones on long missions. Fluid shifts and less thirst raise urinary-tract infection and kidney-stone risk."
+      : "The testes are among the most radiation-sensitive organs and sperm counts can drop temporarily. Early in flight the bladder can be hard to empty (urinary retention). Bone calcium and less thirst raise kidney-stone and urinary-infection risk.",
+    hazards: "Radiation · Gravity · Hostile environment",
+    actions: [
+      "Drink to target (about 2-2.5 L a day) and keep urine pale; tell the CMO about burning, pain or blood when passing urine.",
+      ...(female
+        ? ["Do a monthly breast self-check and log any lump or change; record cycle or hormone-suppression side effects in the self-check notes."]
+        : ["Report testicular pain, swelling or a lump, or difficulty emptying the bladder, to the CMO."]),
+      ...(reproRad !== "GREEN" ? ["Raised radiation: use the shielded sleep station and limit time in lightly shielded modules."] : []),
+    ],
+  };
+
   return [
     {
       id: "brain",
@@ -236,6 +266,84 @@ export function assessBody(x: BodyInputs): RegionStatus[] {
               `Finish today's plan: ${x.exerciseTarget - x.exerciseMinutes} more minutes, prioritising resistance (ARED).`,
               "Drink extra water to lower kidney-stone risk from bone calcium.",
             ],
+    },
+    reproductive,
+  ];
+}
+
+// --- NASA HRP's five hazards of human spaceflight ("RIDGE"), linked to body regions.
+
+export type HazardId = "radiation" | "isolation" | "distance" | "gravity" | "environment";
+
+export type HazardStatus = {
+  id: HazardId;
+  letter: string;
+  name: string;
+  level: RiskLevel;
+  now: string;
+  about: string;
+  regions: RegionId[];
+};
+
+export function assessHazards(x: BodyInputs, regions: RegionStatus[], spaceMode: boolean): HazardStatus[] {
+  const lvl = (id: RegionId) => regions.find((r) => r.id === id)!.level;
+  const radLevel: RiskLevel = x.doseRate > 1 ? "RED" : x.doseRate > 0.1 ? "YELLOW" : "GREEN";
+  const mood = x.check?.items.find((i) => i.id === "mood") ?? null;
+  const isolationLevel = worst([mood?.level ?? null, x.voiceStress ? "YELLOW" : null, x.sleepHours < 5 ? "RED" : x.sleepHours < 7 ? "YELLOW" : "GREEN"]);
+  const anyRed = regions.some((r) => r.level === "RED");
+  const co2Level: RiskLevel = x.ppCO2 > 4 ? "RED" : x.ppCO2 > 3 ? "YELLOW" : "GREEN";
+  const temp = x.check?.items.find((i) => i.id === "temperature") ?? null;
+
+  return [
+    {
+      id: "radiation",
+      letter: "R",
+      name: "Radiation",
+      level: radLevel,
+      now: `${x.doseRate.toFixed(3)} mSv/h${radLevel === "RED" ? " · shelter now" : radLevel === "YELLOW" ? " · above background" : " · background"}`,
+      about:
+        "Outside Earth's magnetic field, galactic cosmic rays and solar particle events raise cancer risk and can damage the brain, heart and blood-forming cells.",
+      regions: ["blood", "brain", "heart", "reproductive"],
+    },
+    {
+      id: "isolation",
+      letter: "I",
+      name: "Isolation & confinement",
+      level: isolationLevel,
+      now: mood ? `mood ${mood.display}` : x.voiceStress ? "voice stress elevated" : "no mood check today",
+      about:
+        "Months in a small crew and a closed volume wear on mood, sleep and teamwork. Daily mood tracking and protected off-duty time catch problems early.",
+      regions: ["brain"],
+    },
+    {
+      id: "distance",
+      letter: "D",
+      name: "Distance from Earth",
+      level: spaceMode && anyRed ? "YELLOW" : "GREEN",
+      now: spaceMode ? "20 min one-way delay · no evacuation" : "link to Earth available",
+      about:
+        "Help is 20 minutes away by radio and months away in person. The crew must assess and treat themselves, which is why the on-board co-pilot and protocols exist.",
+      regions: ["brain", "heart", "lungs", "blood", "eyes", "musculoskeletal", "reproductive"],
+    },
+    {
+      id: "gravity",
+      letter: "G",
+      name: "Gravity fields",
+      level: worst([lvl("musculoskeletal"), lvl("eyes"), lvl("heart") === "RED" ? "YELLOW" : null]),
+      now: `day ${x.missionDay} in microgravity`,
+      about:
+        "Weightlessness unloads bones and muscles, shifts fluid toward the head (vision changes) and deconditions the heart. Switching between gravity levels causes dizziness and fainting.",
+      regions: ["musculoskeletal", "eyes", "heart", "blood"],
+    },
+    {
+      id: "environment",
+      letter: "E",
+      name: "Hostile closed environment",
+      level: worst([co2Level, temp?.level ?? null]),
+      now: `CO₂ ${x.ppCO2.toFixed(1)} mmHg${temp ? ` · temp ${temp.display}` : ""}`,
+      about:
+        "Recycled air, CO₂ build-up, noise, microbes and a weakened immune system make the cabin itself a health risk. Air quality and fever are watched daily.",
+      regions: ["lungs", "brain", "blood", "reproductive"],
     },
   ];
 }

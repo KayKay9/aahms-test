@@ -5,6 +5,8 @@
  * Demo guidance only, written in the style of ISS flight-surgeon checklists.
  */
 
+import { INJURY_TYPES } from "@/lib/injuries";
+
 export type ProtocolCard = {
   id: string;
   title: string;
@@ -121,6 +123,21 @@ export const PROTOCOLS: ProtocolCard[] = [
     keywords: ["eva", "spacewalk", "suit", "go for eva", "fit for"],
     text: "Go for EVA needs normal heart rate, SpO2 95% or higher, adequate sleep, no illness and no active radiation event. Any WARNING status, low SpO2, or a radiation alert is a no-go until resolved and cleared by the flight surgeon.",
   },
+  {
+    id: "menstrual",
+    title: "Periods and menstrual problems",
+    keywords: ["period", "menstrua", "cramp", "cycle", "bleeding", "pms", "tampon", "pad", "suppression", "spotting"],
+    text: "Many crew suppress periods with continuous hormonal contraception; breakthrough bleeding is usually harmless but should be logged and reported. For cramps use a heat pack, light cycling and pain relief (acetaminophen, or ibuprofen with food if no NSAID allergy). Heavy flow: eat iron-rich food and watch for tiredness, dizziness or breathlessness (anaemia). Call the CMO for bleeding over 7 days, soaking a product every hour, severe or one-sided pain, fever, or dizziness. Used products go in sealed waste bags.",
+  },
+  // First-aid cards for external injuries, from the same text the body map shows.
+  ...Object.entries(INJURY_TYPES)
+    .filter(([id]) => id !== "other")
+    .map(([id, t]) => ({
+      id: `injury-${id}`,
+      title: `First aid: ${t.label}`,
+      keywords: t.keywords,
+      text: `${t.steps.join(" ")} ${t.escalate}`,
+    })),
 ];
 
 /**
