@@ -15,10 +15,44 @@ export async function GET() {
   });
 
   const userIds = users.map((u) => u.id);
-  const records = await prisma.biometricRecord.findMany({
-    where: { userId: { in: userIds } },
-    orderBy: { timestamp: "desc" },
-  });
+  // Only the newest record per crew member is needed. Fetching the whole history
+  // (thousands of rows once vitals have been syncing a while) made this route take
+  // 5-10 s; one indexed (userId, timestamp) lookup per user runs in parallel instead.
+  const records = (
+    await Promise.all(
+      userIds.map((userId) =>
+        prisma.biometricRecord.findFirst({
+          where: { userId },
+          orderBy: { timestamp: "desc" },
+        })
+      )
+    )
+  )
+    .filter((r): r is NonNullable<typeof r> => r !== null)
+    .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+  // Each person's own normal: the average of their previous readings (excluding the
+  // newest), so the co-pilot can say "128 bpm, well above Cho's usual 72".
+  const baselines = new Map(
+    await Promise.all(
+      userIds.map(async (userId) => {
+        const agg = await prisma.biometricRecord.aggregate({
+          where: { userId },
+          orderBy: { timestamp: "desc" },
+          skip: 1,
+          take: 300,
+          _avg: { heartRate: true, hrv: true, spo2: true },
+          _count: true,
+        });
+        return [
+          userId,
+          agg._count >= 5
+            ? { heartRate: agg._avg.heartRate, hrv: agg._avg.hrv, spo2: agg._avg.spo2, samples: agg._count }
+            : null,
+        ] as const;
+      })
+    )
+  );
 
   const latestByUser = new Map<string, (typeof records)[0]>();
   for (const r of records) {
@@ -36,6 +70,7 @@ export async function GET() {
         crewId: string;
       };
       latest: (typeof records)[0] | null;
+      baseline: ReturnType<typeof baselines.get> | null;
       risk: RiskLevel;
     }>
   >();
@@ -61,6 +96,7 @@ export async function GET() {
         crewId: u.crewId,
       },
       latest,
+      baseline: baselines.get(u.id) ?? null,
       risk,
     });
     crewMap.set(u.crewId, list);

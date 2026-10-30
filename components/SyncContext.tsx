@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import {
@@ -24,11 +25,23 @@ type SyncContextValue = {
   refreshCount: () => Promise<void>;
 };
 
+function subscribeOnline(onChange: () => void) {
+  window.addEventListener("online", onChange);
+  window.addEventListener("offline", onChange);
+  return () => {
+    window.removeEventListener("online", onChange);
+    window.removeEventListener("offline", onChange);
+  };
+}
+
 const SyncContext = createContext<SyncContextValue | null>(null);
 
 export function SyncProvider({ children }: { children: ReactNode }) {
-  const [isOnline, setIsOnline] = useState(
-    typeof navigator !== "undefined" ? navigator.onLine : true
+  // Server render assumes online; the real value applies after hydration.
+  const isOnline = useSyncExternalStore(
+    subscribeOnline,
+    () => navigator.onLine,
+    () => true
   );
   const [unsyncedCount, setUnsyncedCount] = useState(0);
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
@@ -74,15 +87,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   }, [refreshCount]);
 
   useEffect(() => {
-    const onOnline = () => setIsOnline(true);
-    const onOffline = () => setIsOnline(false);
-    window.addEventListener("online", onOnline);
-    window.addEventListener("offline", onOffline);
     refreshCount();
-    return () => {
-      window.removeEventListener("online", onOnline);
-      window.removeEventListener("offline", onOffline);
-    };
   }, [refreshCount]);
 
   useEffect(() => {

@@ -8,17 +8,25 @@ import { useMissionMode } from "./MissionModeContext";
 
 const MISSION_EPOCH = new Date("2026-01-15T00:00:00Z").getTime();
 
-function formatDuration(ms: number) {
-  const s = Math.floor(ms / 1000);
-  const h = Math.floor(s / 3600);
+/** DDD/HH:MM:SS, the format used on mission clocks. */
+function formatDayTime(ms: number) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
-  return `${h}/${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  return `${String(d).padStart(3, "0")}/${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
+
+const STATUS: Record<RiskLevel, { text: string; cls: string; dot: string }> = {
+  GREEN: { text: "All crew nominal", cls: "border-mc-green/40 text-mc-green", dot: "bg-mc-green" },
+  YELLOW: { text: "Caution · check crew", cls: "border-mc-amber/50 text-mc-amber", dot: "bg-mc-amber" },
+  RED: { text: "Warning · act now", cls: "border-mc-red/60 bg-mc-red/10 text-mc-red", dot: "bg-mc-red animate-pulse" },
+};
 
 export function MissionHeader({ crewRisks }: { crewRisks: RiskLevel[] }) {
   const { mode, setMode } = useMissionMode();
-  const { setScenario } = useMissionTelemetry();
+  const { scenario, setScenario } = useMissionTelemetry();
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -26,98 +34,82 @@ export function MissionHeader({ crewRisks }: { crewRisks: RiskLevel[] }) {
     return () => clearInterval(id);
   }, []);
 
-  const gmt = new Date(now);
-  const metMs = now - MISSION_EPOCH;
-  const worst = worstRisk(crewRisks.length ? crewRisks : ["GREEN"]);
-  const cwBanner =
-    worst === "GREEN"
-      ? "All systems nominal · No active C&W"
-      : worst === "YELLOW"
-        ? "Caution — elevated crew risk indicators"
-        : "Warning — review crew vitals immediately";
+  const status = STATUS[worstRisk(crewRisks.length ? crewRisks : ["GREEN"])];
 
   return (
-    <header className="space-y-3 border-b border-cyan-900/40 pb-4">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <header className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-mc-line bg-mc-header px-4 py-3 md:px-6">
+      <div className="flex items-center gap-3">
+        <svg width="32" height="32" viewBox="0 0 36 36" aria-hidden="true">
+          <circle cx="18" cy="18" r="16.5" fill="#0B3D91" stroke="#2A5BC0" />
+          <ellipse cx="18" cy="18" rx="15" ry="6" fill="none" stroke="#FFFFFF" strokeOpacity=".55" transform="rotate(-24 18 18)" />
+          <path d="M7 19h6l2-5 3 9 2.5-6H29" fill="none" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
         <div>
-          <h1 className="text-lg font-semibold tracking-tight text-cyan-100">
-            AAHMS // EDGE AI
-          </h1>
-          <p className="text-xs text-slate-500">
-            Autonomous Astronaut Health Monitoring System
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-[10px] font-mono text-slate-400">
-          <span className="rounded border border-cyan-900/50 px-2 py-1">
-            MISSION: MTV-1 · MARS TRANSIT
-          </span>
-          <span className="rounded border border-cyan-900/50 px-2 py-1">
-            GMT: {formatDuration(gmt.getUTCHours() * 3600000 + gmt.getUTCMinutes() * 60000 + gmt.getUTCSeconds() * 1000)}
-          </span>
-          <span className="rounded border border-cyan-900/50 px-2 py-1">
-            MET: {formatDuration(metMs)}
-          </span>
-          <span className="rounded border border-cyan-900/50 px-2 py-1 text-amber-400/90">
-            COMM: {mode === "space" ? "LOS · OWLT 20m 04s" : "LINK · PWA SYNC OK"}
-          </span>
-        </div>
-        <div className="flex rounded border border-cyan-900/50 p-0.5 text-xs">
-          <button
-            type="button"
-            onClick={() => setMode("space")}
-            className={`rounded px-3 py-1 ${mode === "space" ? "bg-cyan-500/25 text-cyan-200" : "text-slate-500"}`}
-          >
-            Space Mode
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("earth")}
-            className={`rounded px-3 py-1 ${mode === "earth" ? "bg-cyan-500/25 text-cyan-200" : "text-slate-500"}`}
-          >
-            Earth Mode – Rural PWA
-          </button>
+          <h1 className="text-[15px] font-bold tracking-[0.06em]">AAHMS</h1>
+          <p className="text-[11px] text-mc-label">MTV-1 · Mars transit</p>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {(["EMERGENCY", "WARNING", "CAUTION", "ADVISORY"] as const).map((level) => {
-          const active =
-            (level === "EMERGENCY" && worst === "RED") ||
-            (level === "WARNING" && worst === "RED") ||
-            (level === "CAUTION" && worst === "YELLOW") ||
-            (level === "ADVISORY" && worst === "GREEN");
-          return (
-            <span
-              key={level}
-              className={`rounded px-2 py-0.5 text-[10px] font-medium uppercase ${
-                active
-                  ? "border border-amber-500/40 bg-amber-500/10 text-amber-300"
-                  : "border border-slate-800 text-slate-600"
+      <span className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-[13px] font-semibold ${status.cls}`} role="status">
+        <span className={`h-2 w-2 rounded-full ${status.dot}`} />
+        {status.text}
+      </span>
+
+      <div className="ml-auto flex flex-wrap items-center gap-4">
+        <div className="hidden text-right font-mono text-xs leading-tight sm:block">
+          {/* Clock ticks every second, so server and client HTML differ by design. */}
+          <div suppressHydrationWarning>MET {formatDayTime(now - MISSION_EPOCH)}</div>
+          <div className={mode === "space" ? "text-mc-amber" : "text-mc-green"}>
+            {mode === "space" ? "Earth link delay 20m 04s" : "Online · syncing"}
+          </div>
+        </div>
+
+        <label className="flex items-center gap-2 text-xs text-mc-label">
+          Demo
+          <select
+            value={scenario.id}
+            onChange={(e) => setScenario(e.target.value as DemoScenarioId)}
+            className="min-h-9 rounded-md border border-mc-line-strong bg-mc-panel px-2 text-xs text-foreground"
+          >
+            {DEMO_SCENARIOS.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div role="group" aria-label="Operating mode" className="flex rounded-lg border border-mc-line-strong bg-mc-panel p-[3px]">
+          {(
+            [
+              ["space", "Space"],
+              ["earth", "Earth"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setMode(id)}
+              aria-pressed={mode === id}
+              className={`min-h-8 rounded-md px-3 text-xs ${
+                mode === id ? "bg-mc-nasa font-semibold text-white" : "font-medium text-mc-muted hover:text-white"
               }`}
             >
-              {level}
-            </span>
-          );
-        })}
-        <span
-          className={`ml-2 text-xs ${worst === "GREEN" ? "text-emerald-400" : worst === "YELLOW" ? "text-amber-400" : "text-red-400"}`}
-        >
-          ● {cwBanner}
-        </span>
-      </div>
+              {label}
+            </button>
+          ))}
+        </div>
 
-      <div className="flex flex-wrap gap-2">
-        <span className="text-[10px] uppercase text-slate-600">Demo:</span>
-        {DEMO_SCENARIOS.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => setScenario(s.id as DemoScenarioId)}
-            className="rounded border border-cyan-900/40 px-2 py-0.5 text-[10px] text-slate-400 hover:border-cyan-600/50 hover:text-cyan-300"
-          >
-            {s.label}
-          </button>
-        ))}
+        <button
+          type="button"
+          onClick={async () => {
+            await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+            window.location.assign("/login");
+          }}
+          className="min-h-9 rounded-md border border-mc-line-strong px-3 text-xs font-medium text-mc-muted hover:text-white"
+        >
+          Sign out
+        </button>
       </div>
     </header>
   );

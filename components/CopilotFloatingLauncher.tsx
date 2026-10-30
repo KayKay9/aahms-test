@@ -14,6 +14,7 @@ export function CopilotFloatingLauncher() {
     sendMessage,
     isSending,
     engineStatus,
+    loadPercent,
     session,
   } = useCopilot();
 
@@ -45,8 +46,10 @@ export function CopilotFloatingLauncher() {
               className="h-[min(480px,70vh)]"
               placeholder={
                 engineStatus === "loading"
-                  ? "Loading model — edge triage still works…"
-                  : "Health / emergency query…"
+                  ? `AI loading${loadPercent != null ? ` ${Math.round(loadPercent * 100)}%` : ""}. Basic answers work now…`
+                  : engineStatus === "basic"
+                    ? "Basic mode: ask about symptoms or emergencies…"
+                    : "Ask about symptoms, vitals or emergencies…"
               }
             />
           </div>

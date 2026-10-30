@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SessionUser } from "@/lib/auth";
 import { assessRisk, type RiskLevel } from "@/lib/risk";
 import { MissionHeader } from "./MissionHeader";
 import { OfflineAICopilot } from "./OfflineAICopilot";
 import { CrewOverview, type CrewMemberView } from "./CrewOverview";
-import { VitalsMonitor } from "./VitalsMonitor";
+import { VitalsMonitor, type LiveVitals } from "./VitalsMonitor";
 import { CabinEnvironment } from "./CabinEnvironment";
 import { ExerciseSleep } from "./ExerciseSleep";
 import { PVTTest } from "./PVTTest";
@@ -14,7 +14,7 @@ import { StoreForwardQueue } from "./StoreForwardQueue";
 import { SyncEngine } from "./SyncEngine";
 import { TabBar } from "./ui/TabBar";
 import { useSync } from "./SyncContext";
-import { CopilotProvider } from "./CopilotProvider";
+import { CopilotProvider, type CrewBrief } from "./CopilotProvider";
 import { CopilotFloatingLauncher } from "./CopilotFloatingLauncher";
 
 type DashboardResponse = {
@@ -35,6 +35,7 @@ type DashboardResponse = {
         spo2: number;
         radiation: number | null;
       } | null;
+      baseline: { heartRate: number | null; hrv: number | null; spo2: number | null; samples: number } | null;
       risk: RiskLevel;
     }>;
   }>;
@@ -47,13 +48,20 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
     user.role === "ASTRONAUT" ? user.userId : ""
   );
   const { unsyncedCount } = useSync();
+  const [liveSelected, setLiveSelected] = useState<LiveVitals | null>(null);
 
+  const inFlight = useRef(false);
   const load = useCallback(async () => {
+    // Skip a poll while the previous one is still running so slow links don't pile requests up.
+    if (inFlight.current) return;
+    inFlight.current = true;
     try {
       const res = await fetch("/api/dashboard");
       if (res.ok) setData(await res.json());
     } catch {
       /* offline */
+    } finally {
+      inFlight.current = false;
     }
   }, []);
 
@@ -93,58 +101,74 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
     .find((m) => m.user.id === selectedId)?.latest;
 
   const crewRisks = members.map((m) => m.risk);
+
+  // Every visible crew member's latest reading and personal baseline, so the co-pilot can
+  // answer about anyone, not just the selected card.
+  const crewBriefs: CrewBrief[] = useMemo(
+    () =>
+      (data?.crews ?? [])
+        .flatMap((c) => c.members)
+        .filter((m) => user.role === "COMMANDER" || m.user.crewId === user.crewId)
+        .map((m) => ({
+          name: m.user.name,
+          callsign: m.user.callsign,
+          risk: m.risk,
+          vitals: m.latest
+            ? {
+                heartRate: m.latest.heartRate,
+                hrv: m.latest.hrv ?? 60,
+                spo2: m.latest.spo2,
+                radiation: m.latest.radiation ?? 0.075,
+              }
+            : null,
+          usualHr: m.baseline?.heartRate != null ? Math.round(m.baseline.heartRate) : null,
+          usualHrv: m.baseline?.hrv != null ? Math.round(m.baseline.hrv) : null,
+        })),
+    [data, user]
+  );
   const canWrite =
     user.role === "ASTRONAUT" && selectedId === user.userId;
 
   const tabs = [
-    { id: "telemetry", label: "Live Telemetry & Crew" },
-    { id: "pvt", label: "Cognitive PVT Lab" },
-    { id: "queue", label: `Store-and-Forward Queue (${unsyncedCount})` },
+    { id: "telemetry", label: "Crew vitals" },
+    { id: "habitat", label: "Habitat & routine" },
+    { id: "pvt", label: "Cognitive test" },
+    { id: "queue", label: "Sync queue", badge: unsyncedCount || undefined },
   ];
+
+  const crewCards = (list: DashboardResponse["crews"][number]["members"], hrvDefault: number) =>
+    list.map((m) => {
+      const card = {
+        id: m.user.id,
+        name: m.user.name,
+        callsign: m.user.callsign,
+        heartRate: m.latest?.heartRate ?? 70,
+        hrv: m.latest?.hrv ?? hrvDefault,
+        risk: m.risk,
+      };
+      // The selected card mirrors the live readout below it.
+      return liveSelected?.userId === m.user.id
+        ? { ...card, heartRate: liveSelected.heartRate, hrv: liveSelected.hrv, risk: liveSelected.risk }
+        : card;
+    });
 
   return (
     <CopilotProvider>
-    <div className="min-h-screen bg-[#070b14] p-4 pb-24 text-slate-200 md:p-6 md:pb-24">
+    <div className="flex min-h-screen flex-col bg-mc-bg font-sans text-foreground">
       <SyncEngine />
       <MissionHeader crewRisks={crewRisks} />
 
-      <div className="mt-4 flex flex-col gap-4 lg:flex-row">
-        <OfflineAICopilot
-          userId={user.userId}
-          userName={user.name}
-          displayVitals={
-            selectedMember
-              ? {
-                  heartRate: selectedMember.heartRate,
-                  hrv: selectedMember.hrv,
-                  spo2: selectedServer?.spo2 ?? 98,
-                  radiation: selectedServer?.radiation ?? 0.021,
-                }
-              : undefined
-          }
-        />
-
-        <main className="min-w-0 flex-1 space-y-4">
+      <div className="mx-auto grid w-full max-w-[1400px] flex-1 gap-6 p-4 pb-24 md:p-6 md:pb-24 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <main className="flex min-w-0 flex-col gap-5">
           <TabBar tabs={tabs} active={tab} onChange={setTab} />
 
           {tab === "telemetry" && (
             <>
-              {user.role === "COMMANDER" && data && (
-                <p className="text-[10px] text-slate-600">
-                  Neon last record:{" "}
-                  {data.syncStatus.lastSyncAt ?? "—"}
-                </p>
-              )}
               <CrewOverview
                 members={
-                  data?.crews.find((c) => c.crewId === "MTV-1")?.members.map((m) => ({
-                    id: m.user.id,
-                    name: m.user.name,
-                    callsign: m.user.callsign,
-                    heartRate: m.latest?.heartRate ?? 70,
-                    hrv: m.latest?.hrv ?? 60,
-                    risk: m.risk,
-                  })) ?? members
+                  data?.crews.find((c) => c.crewId === "MTV-1")
+                    ? crewCards(data.crews.find((c) => c.crewId === "MTV-1")!.members, 60)
+                    : members
                 }
                 selectedId={selectedId}
                 onSelect={setSelectedId}
@@ -154,16 +178,9 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
                   .filter((c) => c.crewId !== "MTV-1")
                   .map((crew) => (
                     <div key={crew.crewId} className="space-y-2">
-                      <h3 className="text-xs text-slate-500">Crew {crew.crewId}</h3>
+                      <h3 className="mc-label">Crew {crew.crewId}</h3>
                       <CrewOverview
-                        members={crew.members.map((m) => ({
-                          id: m.user.id,
-                          name: m.user.name,
-                          callsign: m.user.callsign,
-                          heartRate: m.latest?.heartRate ?? 70,
-                          hrv: m.latest?.hrv ?? 55,
-                          risk: m.risk,
-                        }))}
+                        members={crewCards(crew.members, 55)}
                         selectedId={selectedId}
                         onSelect={setSelectedId}
                       />
@@ -173,27 +190,47 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
                 userId={selectedId}
                 userName={selectedMember?.name ?? user.name}
                 canWrite={canWrite}
+                onLive={setLiveSelected}
                 serverVitals={
                   selectedServer
                     ? {
                         heartRate: selectedServer.heartRate,
                         hrv: selectedServer.hrv ?? 60,
                         spo2: selectedServer.spo2,
-                        radiation: selectedServer.radiation ?? 0.021,
+                        radiation: selectedServer.radiation ?? 0.075,
                       }
                     : undefined
                 }
               />
-              <div className="grid gap-4 md:grid-cols-2">
-                <CabinEnvironment />
-                <ExerciseSleep />
-              </div>
             </>
           )}
 
+          {tab === "habitat" && (
+            <div className="grid gap-5 md:grid-cols-2">
+              <CabinEnvironment />
+              <ExerciseSleep />
+            </div>
+          )}
           {tab === "pvt" && <PVTTest />}
           {tab === "queue" && <StoreForwardQueue />}
         </main>
+
+        <OfflineAICopilot
+          userId={user.userId}
+          userName={user.name}
+          patientName={selectedMember?.name}
+          crew={crewBriefs}
+          displayVitals={
+            selectedMember
+              ? {
+                  heartRate: selectedMember.heartRate,
+                  hrv: selectedMember.hrv,
+                  spo2: selectedServer?.spo2 ?? 98,
+                  radiation: selectedServer?.radiation ?? 0.075,
+                }
+              : undefined
+          }
+        />
       </div>
       <CopilotFloatingLauncher />
     </div>

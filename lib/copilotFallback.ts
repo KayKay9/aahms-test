@@ -16,7 +16,7 @@ export function generateCopilotFallback(
   const q = userMessage.toLowerCase();
   const prefix = ctx.webLlmReady
     ? ""
-    : "[Edge triage engine — WebLLM still loading or unavailable] ";
+    : "[Basic mode · built-in triage rules] ";
 
   if (/dizz|vertigo|lightheaded|feel dizzy/.test(q)) {
     return (
@@ -55,6 +55,6 @@ export function generateCopilotFallback(
 
   return (
     prefix +
-    `Flight Surgeon Co-Pilot (${ctx.userName}): vitals ${ctx.vitalsSummary}; assessment ${riskLabel(ctx.risk)}. ${ctx.pvtSummary}. For your question — maintain hydration, sleep hygiene, and exercise quota; recheck vitals in 15 min. Full LLM inference ${ctx.webLlmReady ? "available" : "pending — enable WebGPU in Chrome/Edge and wait for model download (~hundreds MB first run)"}.`
+    `Flight Surgeon Co-Pilot (${ctx.userName}): vitals ${ctx.vitalsSummary}; assessment ${riskLabel(ctx.risk)}. ${ctx.pvtSummary}. For your question — maintain hydration, sleep hygiene, and exercise quota; recheck vitals in 15 min. ${ctx.webLlmReady ? "" : "For free-form questions, the full on-device AI needs a WebGPU-capable browser and GPU."}`
   );
 }

@@ -1,15 +1,44 @@
 @import "tailwindcss";
 
 :root {
-  --background: #070b14;
-  --foreground: #e2e8f0;
+  --background: #060a13;
+  --foreground: #e8edf6;
 }
 
+/* Mission Console design tokens (from the AAHMS design canvas) */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Segoe UI Mono", monospace;
+  --color-mc-bg: #060a13;
+  --color-mc-header: #08101e;
+  --color-mc-bar: #070d19;
+  --color-mc-panel: #0c1322;
+  --color-mc-inset: #0a1120;
+  --color-mc-raised: #131d33;
+  --color-mc-line: #1c2840;
+  --color-mc-line-strong: #24314d;
+  --color-mc-label: #8a95ac;
+  --color-mc-muted: #a3aec2;
+  --color-mc-soft: #c9d2e3;
+  --color-mc-nasa: #0b3d91;
+  --color-mc-nasa-edge: #2a5bc0;
+  --color-mc-select: #4c8dff;
+  --color-mc-cyan: #5cc8ff;
+  --color-mc-link: #7fb2ff;
+  --color-mc-green: #3ddc97;
+  --color-mc-amber: #f5b82e;
+  --color-mc-red: #ff5d5d;
+  --color-mc-violet: #9c8cff;
+  --font-sans: var(--font-inter), "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "Cascadia Code", monospace;
+}
+
+@utility mc-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-mc-label);
 }
 
 body {
@@ -92,6 +121,146 @@ body {
   .hud-scanline,
   .rise-in,
   .launch-out {
+    animation: none;
+  }
+}
+
+/* Cognitive PVT "Beacon Lock" game */
+.pvt-arena {
+  background: radial-gradient(ellipse at 30% 20%, #0f1d3a 0%, #070c18 60%, #04070f 100%);
+}
+
+.pvt-stars {
+  position: absolute;
+  inset: -50%;
+  background-image:
+    radial-gradient(1px 1px at 10% 20%, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1px 1px at 30% 70%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1.5px 1.5px at 55% 35%, rgba(180, 220, 255, 0.8), transparent),
+    radial-gradient(1px 1px at 75% 80%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 90% 15%, rgba(255, 255, 255, 0.5), transparent);
+  background-size: 220px 220px;
+  animation: pvt-drift 60s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes pvt-drift {
+  to {
+    transform: translate(220px, 110px);
+  }
+}
+
+.pvt-beacon {
+  background: radial-gradient(circle, #b9ffe0 0%, #34d399 45%, rgba(16, 185, 129, 0.15) 70%, transparent 72%);
+  box-shadow: 0 0 22px rgba(52, 211, 153, 0.7);
+  animation-name: pvt-fade;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+  cursor: crosshair;
+}
+
+.pvt-beacon::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 9999px;
+  border: 2px solid rgba(110, 231, 183, 0.7);
+  animation: pvt-ping 0.9s ease-out infinite;
+}
+
+.pvt-decoy {
+  background: radial-gradient(circle, #ffd0d0 0%, #f87171 45%, rgba(239, 68, 68, 0.15) 70%, transparent 72%);
+  box-shadow: 0 0 22px rgba(248, 113, 113, 0.7);
+}
+
+.pvt-decoy::after {
+  border-color: rgba(252, 165, 165, 0.7);
+}
+
+@keyframes pvt-fade {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  8% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.35);
+    opacity: 0.25;
+  }
+}
+
+@keyframes pvt-ping {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.pvt-pop {
+  animation: pvt-pop 0.8s ease-out forwards;
+}
+
+@keyframes pvt-pop {
+  0% {
+    transform: translateY(0) scale(0.8);
+    opacity: 0;
+  }
+  15% {
+    transform: translateY(-6px) scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-34px) scale(1);
+    opacity: 0;
+  }
+}
+
+.pvt-count {
+  animation: pvt-count 0.7s ease-out both;
+}
+
+@keyframes pvt-count {
+  0% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
+}
+
+.pvt-shake {
+  animation: pvt-shake 0.3s ease-in-out;
+}
+
+@keyframes pvt-shake {
+  25% {
+    transform: translateX(-5px);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+  75% {
+    transform: translateX(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pvt-stars,
+  .pvt-beacon::after,
+  .pvt-shake {
     animation: none;
   }
 }

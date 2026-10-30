@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card } from "./ui/Card";
+import { EcgMonitor } from "./EcgMonitor";
+import { HrvTrend } from "./HrvTrend";
 import { addVital, getRecentForUser } from "@/lib/db";
-import { assessRisk, riskLabel } from "@/lib/risk";
+import { assessRisk, riskLabel, type RiskLevel } from "@/lib/risk";
 import { useMissionTelemetry } from "@/components/MissionTelemetryProvider";
 import { useSync } from "./SyncContext";
 
@@ -17,15 +19,18 @@ type VitalsMonitorProps = {
     spo2: number;
     radiation: number;
   };
+  onLive?: (v: LiveVitals) => void;
 };
+
+export type LiveVitals = { userId: string; heartRate: number; hrv: number; risk: RiskLevel };
 
 export function VitalsMonitor({
   userId,
   userName,
   canWrite,
   serverVitals,
+  onLive,
 }: VitalsMonitorProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const {
     scenario,
     simulationEnabled,
@@ -37,26 +42,46 @@ export function VitalsMonitor({
     heartRate: serverVitals?.heartRate ?? 78,
     hrv: serverVitals?.hrv ?? 62,
     spo2: serverVitals?.spo2 ?? 98,
-    radiation: serverVitals?.radiation ?? 0.021,
+    radiation: serverVitals?.radiation ?? 0.075,
   });
   const [hrvHistory, setHrvHistory] = useState<number[]>([]);
   const [manual, setManual] = useState({
     heartRate: 78,
     hrv: 62,
     spo2: 98,
-    radiation: 0.021,
+    radiation: 0.075,
   });
+
+  // Bedside monitors refresh numerics every second with small physiological drift.
+  const [live, setLive] = useState(display);
+
+  // Stored readings already include the scenario offset; adding it again would double count.
+  const fromServer = serverVitals && {
+    heartRate: serverVitals.heartRate,
+    hrv: Math.max(10, serverVitals.hrv),
+    spo2: serverVitals.spo2,
+    radiation: radiation,
+  };
+
+  // Jump straight to a newly selected member's numbers instead of drifting over from the last one.
+  // Done during render so the readout and crew card never show a frame of the previous member.
+  const [shownUserId, setShownUserId] = useState(userId);
+  if (shownUserId !== userId && fromServer) {
+    setShownUserId(userId);
+    setDisplay(fromServer);
+    setLive(fromServer);
+  }
 
   useEffect(() => {
     if (serverVitals) {
       setDisplay({
-        heartRate: serverVitals.heartRate + scenario.heartRateOffset,
-        hrv: Math.max(10, serverVitals.hrv + scenario.hrvOffset),
+        heartRate: serverVitals.heartRate,
+        hrv: Math.max(10, serverVitals.hrv),
         spo2: serverVitals.spo2,
         radiation: radiation,
       });
     }
-  }, [serverVitals, scenario, radiation]);
+  }, [serverVitals, radiation]);
 
   const writeVital = useCallback(
     async (v: typeof display) => {
@@ -77,12 +102,9 @@ export function VitalsMonitor({
 
   useEffect(() => {
     if (!canWrite || !simulationEnabled) return;
-    const base = serverVitals ?? {
-      heartRate: 78,
-      hrv: 62,
-      spo2: 98,
-      radiation: 0.021,
-    };
+    // Simulate around a fixed resting baseline. Seeding from the last stored reading made every
+    // sync add the scenario offset again, so heart rate ratcheted up into the thousands.
+    const base = { heartRate: 72, hrv: 62, spo2: 98 };
     const tick = () => {
       const v = {
         heartRate: Math.round(
@@ -103,7 +125,6 @@ export function VitalsMonitor({
   }, [
     canWrite,
     simulationEnabled,
-    serverVitals,
     scenario,
     radiation,
     writeVital,
@@ -116,88 +137,67 @@ export function VitalsMonitor({
   }, [userId, display.hrv]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    let frame = 0;
-    const w = canvas.width;
-    const h = canvas.height;
-
-    const draw = () => {
-      ctx.fillStyle = "#070b14";
-      ctx.fillRect(0, 0, w, h);
-      ctx.strokeStyle = "#22d3ee";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      const bpm = display.heartRate;
-      const period = (60 / bpm) * 60;
-      for (let x = 0; x < w; x++) {
-        const t = (x + frame) / period;
-        let y = h / 2;
-        if (arrhythmia) {
-          y += Math.sin(t * Math.PI * 2) * 12 + Math.sin(t * 17) * 8;
-        } else {
-          const beat = t % 1;
-          if (beat < 0.1) y -= 25 * (beat / 0.1);
-          else if (beat < 0.15) y += 35 * ((beat - 0.1) / 0.05);
-          else if (beat < 0.2) y -= 15 * ((beat - 0.15) / 0.05);
-          else y += Math.sin(t * Math.PI * 2) * 3;
-        }
-        if (x === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-      frame += 2;
-      requestAnimationFrame(draw);
-    };
-    draw();
-  }, [display.heartRate, arrhythmia]);
+    const id = setInterval(() => {
+      setLive((prev) => {
+        const pull = (cur: number, target: number, jitter: number) =>
+          cur + (target - cur) * 0.35 + (Math.random() - 0.5) * jitter;
+        return {
+          heartRate: Math.round(pull(prev.heartRate, display.heartRate, arrhythmia ? 14 : 2.4)),
+          hrv: Math.max(8, pull(prev.hrv, display.hrv, 2.2)),
+          spo2: Math.min(100, pull(prev.spo2, display.spo2, 0.5)),
+          radiation: display.radiation,
+        };
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [display, arrhythmia]);
 
   const risk = assessRisk(display);
-  const rhythm = arrhythmia ? "IRREGULAR RHYTHM — REVIEW" : "NORMAL SINUS RHYTHM";
+
+  // Keep the selected crew card in step with this readout.
+  useEffect(() => {
+    if (shownUserId !== userId) return;
+    onLive?.({ userId, heartRate: live.heartRate, hrv: live.hrv, risk });
+  }, [onLive, userId, shownUserId, live.heartRate, live.hrv, risk]);
+
+  const riskTone =
+    risk === "GREEN"
+      ? "border-[#1f5f48] text-mc-green"
+      : risk === "YELLOW"
+        ? "border-mc-amber/50 text-mc-amber"
+        : "border-mc-red/50 text-mc-red";
 
   return (
-    <Card title={`Biometrics — ${userName}`}>
-      <canvas
-        ref={canvasRef}
-        width={640}
-        height={120}
-        className="mb-4 w-full rounded border border-cyan-900/30 bg-[#070b14]"
-      />
-      <div className="mb-2 flex flex-wrap items-center gap-4">
-        <Metric label="Heart rate" value={`${display.heartRate} bpm`} />
-        <Metric label="SpO₂" value={`${display.spo2.toFixed(0)}%`} />
-        <Metric label="HRV" value={`${Math.round(display.hrv)} ms`} />
-        <span
-          className={`rounded border px-2 py-0.5 text-[10px] ${
-            risk === "GREEN"
-              ? "border-emerald-500/40 text-emerald-400"
-              : risk === "YELLOW"
-                ? "border-amber-500/40 text-amber-400"
-                : "border-red-500/40 text-red-400"
-          }`}
-        >
-          {rhythm} · {riskLabel(risk)}
+    <Card
+      title={
+        <span className="text-sm font-semibold normal-case tracking-normal text-foreground">{userName}</span>
+      }
+      action={
+        <span className={`rounded border px-2 py-1 font-mono text-[11px] ${riskTone}`}>
+          {arrhythmia ? "Irregular rhythm" : "Normal rhythm"} · {riskLabel(risk)}
         </span>
+      }
+    >
+      <div className="grid grid-cols-3 gap-3">
+        <Metric label="Heart rate" value={live.heartRate} unit="bpm" big pulse />
+        <Metric label="SpO₂" value={Math.round(live.spo2)} unit="%" big />
+        <Metric label="HRV" value={Math.round(live.hrv)} unit="ms" big />
       </div>
-      <div className="mb-4">
-        <p className="mb-1 text-[10px] uppercase text-slate-600">24h HRV RMSSD</p>
-        <div className="flex h-8 items-end gap-0.5">
-          {(hrvHistory.length ? hrvHistory : [40, 45, 50, 55, 60, 62, 58, 65]).map(
-            (v, i) => (
-              <div
-                key={i}
-                className="flex-1 rounded-t bg-cyan-600/60"
-                style={{ height: `${Math.min(100, v)}%` }}
-              />
-            )
-          )}
+      <div className="mt-4">
+        <EcgMonitor heartRate={live.heartRate} hrv={live.hrv} irregular={arrhythmia} className="h-[130px]" />
+      </div>
+
+      <details className="group mt-4 border-t border-mc-line pt-3">
+        <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between text-xs font-medium text-mc-muted hover:text-white">
+          24 h HRV trend{canWrite ? " and manual entry" : ""}
+          <span className="transition group-open:rotate-180" aria-hidden>▾</span>
+        </summary>
+        <div className="mt-3">
+          <HrvTrend userId={userId} values={hrvHistory} current={live.hrv} />
         </div>
-      </div>
       {canWrite && (
         <form
-          className="grid grid-cols-2 gap-2 border-t border-slate-800 pt-3 text-xs md:grid-cols-5"
+          className="mt-5 grid grid-cols-2 gap-3 border-t border-mc-line pt-4 text-xs md:grid-cols-4"
           onSubmit={(e) => {
             e.preventDefault();
             const v = { ...manual, radiation };
@@ -205,9 +205,15 @@ export function VitalsMonitor({
             void writeVital(v);
           }}
         >
-          {(["heartRate", "hrv", "spo2"] as const).map((k) => (
-            <label key={k} className="text-slate-500">
-              {k}
+          {(
+            [
+              ["heartRate", "Heart rate"],
+              ["hrv", "HRV"],
+              ["spo2", "SpO₂"],
+            ] as const
+          ).map(([k, label]) => (
+            <label key={k} className="mc-label">
+              {label}
               <input
                 type="number"
                 step={k === "spo2" ? 0.1 : 1}
@@ -215,27 +221,46 @@ export function VitalsMonitor({
                 onChange={(e) =>
                   setManual((m) => ({ ...m, [k]: Number(e.target.value) }))
                 }
-                className="mt-1 w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 font-mono text-slate-200"
+                className="mt-1.5 w-full rounded-md border border-mc-line-strong bg-mc-inset px-2.5 py-2 font-mono text-sm normal-case tracking-normal text-foreground"
               />
             </label>
           ))}
           <button
             type="submit"
-            className="col-span-2 rounded bg-cyan-700/80 py-2 text-white md:col-span-1 md:self-end"
+            className="col-span-2 min-h-11 rounded-md border border-mc-nasa-edge bg-mc-nasa text-sm font-semibold text-white md:col-span-1 md:self-end"
           >
             Record vitals
           </button>
         </form>
       )}
+      </details>
     </Card>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({
+  label,
+  value,
+  unit,
+  big = false,
+  pulse = false,
+}: {
+  label: string;
+  value: number;
+  unit: string;
+  big?: boolean;
+  pulse?: boolean;
+}) {
   return (
-    <div>
-      <p className="text-[10px] uppercase text-slate-500">{label}</p>
-      <p className="font-mono text-lg text-cyan-100">{value}</p>
+    <div className="flex flex-col gap-0.5 rounded-md bg-mc-inset px-4 py-3">
+      <span className="mc-label flex items-center gap-2">
+        {label}
+        {pulse && <span className="h-1.5 w-1.5 animate-ping rounded-full bg-mc-green" aria-hidden />}
+      </span>
+      <span className={`font-mono tabular-nums ${big ? "text-[32px] font-medium leading-tight" : "text-[22px]"}`}>
+        {value}
+        <span className="text-sm text-mc-label"> {unit}</span>
+      </span>
     </div>
   );
 }
