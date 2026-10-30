@@ -13,6 +13,9 @@ import { PVTTest } from "./PVTTest";
 import { StoreForwardQueue } from "./StoreForwardQueue";
 import { SyncEngine } from "./SyncEngine";
 import { DailySelfCheck } from "./DailySelfCheck";
+import { BodyMap } from "./BodyMap";
+import { HealthMissions } from "./HealthMissions";
+import { useHealthMissions } from "@/lib/missions";
 import { SelfCheckDue } from "./SelfCheckDue";
 import { TabBar } from "./ui/TabBar";
 import { useSync } from "./SyncContext";
@@ -131,9 +134,13 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
   const canWrite =
     user.role === "ASTRONAUT" && selectedId === user.userId;
 
+  const missions = useHealthMissions(user.userId);
+
   const tabs = [
     { id: "telemetry", label: "Crew vitals" },
+    { id: "body", label: "Body map" },
     { id: "check", label: "Daily check" },
+    { id: "missions", label: "Missions", badge: missions.remaining || undefined },
     { id: "habitat", label: "Habitat & routine" },
     { id: "pvt", label: "Cognitive test" },
     { id: "queue", label: "Sync queue", badge: unsyncedCount || undefined },
@@ -208,6 +215,22 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
               />
             </>
           )}
+
+          {tab === "body" && (
+            <BodyMap
+              userId={user.userId}
+              name={selectedMember?.name ?? user.name}
+              vitals={{
+                heartRate: selectedMember?.heartRate ?? selectedServer?.heartRate ?? 72,
+                hrv: selectedMember?.hrv ?? selectedServer?.hrv ?? 60,
+                spo2: selectedServer?.spo2 ?? 98,
+                radiation: selectedServer?.radiation ?? 0.075,
+              }}
+              onOpenSelfCheck={() => setTab("check")}
+            />
+          )}
+
+          {tab === "missions" && <HealthMissions userId={user.userId} onGo={setTab} />}
 
           {tab === "check" && (
             <DailySelfCheck userId={user.userId} userName={user.name} onDone={() => setTab("telemetry")} />
