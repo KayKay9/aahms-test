@@ -5,7 +5,7 @@ import { Card } from "./ui/Card";
 import { EcgMonitor } from "./EcgMonitor";
 import { HrvTrend } from "./HrvTrend";
 import { addVital, getRecentForUser } from "@/lib/db";
-import { assessRisk, riskLabel } from "@/lib/risk";
+import { assessRisk, riskLabel, type RiskLevel } from "@/lib/risk";
 import { useMissionTelemetry } from "@/components/MissionTelemetryProvider";
 import { useSync } from "./SyncContext";
 
@@ -19,13 +19,17 @@ type VitalsMonitorProps = {
     spo2: number;
     radiation: number;
   };
+  onLive?: (v: LiveVitals) => void;
 };
+
+export type LiveVitals = { userId: string; heartRate: number; hrv: number; risk: RiskLevel };
 
 export function VitalsMonitor({
   userId,
   userName,
   canWrite,
   serverVitals,
+  onLive,
 }: VitalsMonitorProps) {
   const {
     scenario,
@@ -38,26 +42,46 @@ export function VitalsMonitor({
     heartRate: serverVitals?.heartRate ?? 78,
     hrv: serverVitals?.hrv ?? 62,
     spo2: serverVitals?.spo2 ?? 98,
-    radiation: serverVitals?.radiation ?? 0.021,
+    radiation: serverVitals?.radiation ?? 0.075,
   });
   const [hrvHistory, setHrvHistory] = useState<number[]>([]);
   const [manual, setManual] = useState({
     heartRate: 78,
     hrv: 62,
     spo2: 98,
-    radiation: 0.021,
+    radiation: 0.075,
   });
+
+  // Bedside monitors refresh numerics every second with small physiological drift.
+  const [live, setLive] = useState(display);
+
+  // Stored readings already include the scenario offset; adding it again would double count.
+  const fromServer = serverVitals && {
+    heartRate: serverVitals.heartRate,
+    hrv: Math.max(10, serverVitals.hrv),
+    spo2: serverVitals.spo2,
+    radiation: radiation,
+  };
+
+  // Jump straight to a newly selected member's numbers instead of drifting over from the last one.
+  // Done during render so the readout and crew card never show a frame of the previous member.
+  const [shownUserId, setShownUserId] = useState(userId);
+  if (shownUserId !== userId && fromServer) {
+    setShownUserId(userId);
+    setDisplay(fromServer);
+    setLive(fromServer);
+  }
 
   useEffect(() => {
     if (serverVitals) {
       setDisplay({
-        heartRate: serverVitals.heartRate + scenario.heartRateOffset,
-        hrv: Math.max(10, serverVitals.hrv + scenario.hrvOffset),
+        heartRate: serverVitals.heartRate,
+        hrv: Math.max(10, serverVitals.hrv),
         spo2: serverVitals.spo2,
         radiation: radiation,
       });
     }
-  }, [serverVitals, scenario, radiation]);
+  }, [serverVitals, radiation]);
 
   const writeVital = useCallback(
     async (v: typeof display) => {
@@ -78,12 +102,9 @@ export function VitalsMonitor({
 
   useEffect(() => {
     if (!canWrite || !simulationEnabled) return;
-    const base = serverVitals ?? {
-      heartRate: 78,
-      hrv: 62,
-      spo2: 98,
-      radiation: 0.021,
-    };
+    // Simulate around a fixed resting baseline. Seeding from the last stored reading made every
+    // sync add the scenario offset again, so heart rate ratcheted up into the thousands.
+    const base = { heartRate: 72, hrv: 62, spo2: 98 };
     const tick = () => {
       const v = {
         heartRate: Math.round(
@@ -104,7 +125,6 @@ export function VitalsMonitor({
   }, [
     canWrite,
     simulationEnabled,
-    serverVitals,
     scenario,
     radiation,
     writeVital,
@@ -116,8 +136,6 @@ export function VitalsMonitor({
     });
   }, [userId, display.hrv]);
 
-  // Bedside monitors refresh numerics every second with small physiological drift.
-  const [live, setLive] = useState(display);
   useEffect(() => {
     const id = setInterval(() => {
       setLive((prev) => {
@@ -135,6 +153,12 @@ export function VitalsMonitor({
   }, [display, arrhythmia]);
 
   const risk = assessRisk(display);
+
+  // Keep the selected crew card in step with this readout.
+  useEffect(() => {
+    if (shownUserId !== userId) return;
+    onLive?.({ userId, heartRate: live.heartRate, hrv: live.hrv, risk });
+  }, [onLive, userId, shownUserId, live.heartRate, live.hrv, risk]);
 
   const riskTone =
     risk === "GREEN"

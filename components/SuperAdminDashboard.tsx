@@ -6,7 +6,7 @@ import { assessRisk, type RiskLevel } from "@/lib/risk";
 import { MissionHeader } from "./MissionHeader";
 import { OfflineAICopilot } from "./OfflineAICopilot";
 import { CrewOverview, type CrewMemberView } from "./CrewOverview";
-import { VitalsMonitor } from "./VitalsMonitor";
+import { VitalsMonitor, type LiveVitals } from "./VitalsMonitor";
 import { CabinEnvironment } from "./CabinEnvironment";
 import { ExerciseSleep } from "./ExerciseSleep";
 import { PVTTest } from "./PVTTest";
@@ -14,7 +14,7 @@ import { StoreForwardQueue } from "./StoreForwardQueue";
 import { SyncEngine } from "./SyncEngine";
 import { TabBar } from "./ui/TabBar";
 import { useSync } from "./SyncContext";
-import { CopilotProvider } from "./CopilotProvider";
+import { CopilotProvider, type CrewBrief } from "./CopilotProvider";
 import { CopilotFloatingLauncher } from "./CopilotFloatingLauncher";
 
 type DashboardResponse = {
@@ -35,6 +35,7 @@ type DashboardResponse = {
         spo2: number;
         radiation: number | null;
       } | null;
+      baseline: { heartRate: number | null; hrv: number | null; spo2: number | null; samples: number } | null;
       risk: RiskLevel;
     }>;
   }>;
@@ -47,6 +48,7 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
     user.role === "ASTRONAUT" ? user.userId : ""
   );
   const { unsyncedCount } = useSync();
+  const [liveSelected, setLiveSelected] = useState<LiveVitals | null>(null);
 
   const inFlight = useRef(false);
   const load = useCallback(async () => {
@@ -99,6 +101,31 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
     .find((m) => m.user.id === selectedId)?.latest;
 
   const crewRisks = members.map((m) => m.risk);
+
+  // Every visible crew member's latest reading and personal baseline, so the co-pilot can
+  // answer about anyone, not just the selected card.
+  const crewBriefs: CrewBrief[] = useMemo(
+    () =>
+      (data?.crews ?? [])
+        .flatMap((c) => c.members)
+        .filter((m) => user.role === "COMMANDER" || m.user.crewId === user.crewId)
+        .map((m) => ({
+          name: m.user.name,
+          callsign: m.user.callsign,
+          risk: m.risk,
+          vitals: m.latest
+            ? {
+                heartRate: m.latest.heartRate,
+                hrv: m.latest.hrv ?? 60,
+                spo2: m.latest.spo2,
+                radiation: m.latest.radiation ?? 0.075,
+              }
+            : null,
+          usualHr: m.baseline?.heartRate != null ? Math.round(m.baseline.heartRate) : null,
+          usualHrv: m.baseline?.hrv != null ? Math.round(m.baseline.hrv) : null,
+        })),
+    [data, user]
+  );
   const canWrite =
     user.role === "ASTRONAUT" && selectedId === user.userId;
 
@@ -110,14 +137,20 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
   ];
 
   const crewCards = (list: DashboardResponse["crews"][number]["members"], hrvDefault: number) =>
-    list.map((m) => ({
-      id: m.user.id,
-      name: m.user.name,
-      callsign: m.user.callsign,
-      heartRate: m.latest?.heartRate ?? 70,
-      hrv: m.latest?.hrv ?? hrvDefault,
-      risk: m.risk,
-    }));
+    list.map((m) => {
+      const card = {
+        id: m.user.id,
+        name: m.user.name,
+        callsign: m.user.callsign,
+        heartRate: m.latest?.heartRate ?? 70,
+        hrv: m.latest?.hrv ?? hrvDefault,
+        risk: m.risk,
+      };
+      // The selected card mirrors the live readout below it.
+      return liveSelected?.userId === m.user.id
+        ? { ...card, heartRate: liveSelected.heartRate, hrv: liveSelected.hrv, risk: liveSelected.risk }
+        : card;
+    });
 
   return (
     <CopilotProvider>
@@ -157,13 +190,14 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
                 userId={selectedId}
                 userName={selectedMember?.name ?? user.name}
                 canWrite={canWrite}
+                onLive={setLiveSelected}
                 serverVitals={
                   selectedServer
                     ? {
                         heartRate: selectedServer.heartRate,
                         hrv: selectedServer.hrv ?? 60,
                         spo2: selectedServer.spo2,
-                        radiation: selectedServer.radiation ?? 0.021,
+                        radiation: selectedServer.radiation ?? 0.075,
                       }
                     : undefined
                 }
@@ -184,13 +218,15 @@ export function SuperAdminDashboard({ user }: { user: SessionUser }) {
         <OfflineAICopilot
           userId={user.userId}
           userName={user.name}
+          patientName={selectedMember?.name}
+          crew={crewBriefs}
           displayVitals={
             selectedMember
               ? {
                   heartRate: selectedMember.heartRate,
                   hrv: selectedMember.hrv,
                   spo2: selectedServer?.spo2 ?? 98,
-                  radiation: selectedServer?.radiation ?? 0.021,
+                  radiation: selectedServer?.radiation ?? 0.075,
                 }
               : undefined
           }

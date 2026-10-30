@@ -5,12 +5,15 @@ import { useVoiceCheckIn } from "./useVoiceCheckIn";
 import { riskLabel } from "@/lib/risk";
 import { useMissionTelemetry } from "@/components/MissionTelemetryProvider";
 import { useSync } from "./SyncContext";
-import { useCopilot } from "./CopilotProvider";
+import { useCopilot, type CrewBrief } from "./CopilotProvider";
 import { modelLabel } from "@/lib/webllm/engine";
 
 type OfflineAICopilotProps = {
   userId: string;
   userName: string;
+  /** The crew member whose vitals are on screen (may differ from the signed-in user). */
+  patientName?: string;
+  crew?: CrewBrief[];
   displayVitals?: {
     heartRate: number;
     hrv: number;
@@ -28,6 +31,8 @@ const RISK_TONE = {
 export function OfflineAICopilot({
   userId,
   userName,
+  patientName,
+  crew,
   displayVitals,
 }: OfflineAICopilotProps) {
   const { voiceStress } = useMissionTelemetry();
@@ -48,8 +53,8 @@ export function OfflineAICopilot({
   } = useCopilot();
 
   useEffect(() => {
-    setSession({ userId, userName, displayVitals });
-  }, [userId, userName, displayVitals, setSession]);
+    setSession({ userId, userName, patientName, crew, displayVitals });
+  }, [userId, userName, patientName, crew, displayVitals, setSession]);
 
   const stressFromHrv = displayVitals?.hrv ?? 62;
   let stressIndex = Math.max(0, Math.min(100, Math.round(100 - stressFromHrv)));

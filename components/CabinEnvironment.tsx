@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Card } from "./ui/Card";
 import { useMissionTelemetry } from "@/components/MissionTelemetryProvider";
 
@@ -47,9 +48,35 @@ function LimitBar({
   );
 }
 
+/**
+ * Live sensor readings around the scenario setpoints. ppCO₂ follows the scrubber's slow
+ * adsorb/desorb cycle (and drops when the scrubber is boosted); the dosimeter reading has
+ * counting noise, so it never sits perfectly still.
+ */
+function useLiveCabin(ppCO2: number, radiation: number, scrubberBoost: boolean) {
+  const [t, setT] = useState(0);
+  const [jitter, setJitter] = useState({ co2: 0, rad: 0 });
+  useEffect(() => {
+    const id = setInterval(() => {
+      setT((x) => x + 2);
+      setJitter((j) => ({
+        co2: j.co2 * 0.7 + (Math.random() - 0.5) * 0.06,
+        rad: (Math.random() - 0.5) * 0.16,
+      }));
+    }, 2000);
+    return () => clearInterval(id);
+  }, []);
+  const scrubberCycle = 0.18 * Math.sin((2 * Math.PI * t) / 144);
+  return {
+    ppCO2: Math.max(0.5, ppCO2 - (scrubberBoost ? 0.5 : 0) + scrubberCycle + jitter.co2),
+    radiation: Math.max(0, radiation * (1 + jitter.rad)),
+  };
+}
+
 export function CabinEnvironment() {
-  const { ppCO2, radiation, shieldingBoost, setShieldingBoost } =
+  const { ppCO2: co2Setpoint, radiation: radSetpoint, shieldingBoost, setShieldingBoost } =
     useMissionTelemetry();
+  const { ppCO2, radiation } = useLiveCabin(co2Setpoint, radSetpoint, shieldingBoost);
 
   return (
     <Card title="Cabin environment & radiation" className="flex flex-col">
@@ -64,7 +91,7 @@ export function CabinEnvironment() {
           barClass={ppCO2 > 4 ? "bg-mc-red" : ppCO2 > 3.5 ? "bg-mc-amber" : "bg-mc-green"}
         />
         <LimitBar
-          label="Solar radiation dose rate"
+          label="Radiation dose rate (GCR + solar)"
           value={radiation.toFixed(3)}
           unit="mSv/hr"
           max={3}

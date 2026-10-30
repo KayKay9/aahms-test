@@ -42,6 +42,26 @@ export function assessRisk(vitals: VitalSignals): RiskLevel {
   return "GREEN";
 }
 
+/**
+ * Vitals as text with each value already judged (e.g. "HR 128 bpm (HIGH)"), using the
+ * same ranges as assessRisk. Small on-device models misread raw numbers, so the
+ * co-pilot gets the verdicts spelled out.
+ */
+export function describeVitals(vitals: VitalSignals): string {
+  const flag = (bad: boolean, word: string) => (bad ? ` (${word})` : " (normal)");
+  const parts = [
+    `HR ${Math.round(vitals.heartRate)} bpm${
+      vitals.heartRate > 100 ? " (HIGH)" : vitals.heartRate < 55 ? " (LOW)" : " (normal)"
+    }`,
+    `SpO2 ${Math.round(vitals.spo2)}%${flag(vitals.spo2 < 95, "LOW")}`,
+  ];
+  if (vitals.hrv != null) parts.push(`HRV ${Math.round(vitals.hrv)} ms${flag(vitals.hrv <= 30, "LOW")}`);
+  if (vitals.radiation != null) {
+    parts.push(`radiation ${vitals.radiation.toFixed(3)} mSv/h${flag(vitals.radiation >= 0.1, "HIGH")}`);
+  }
+  return parts.join(", ");
+}
+
 export function riskLabel(level: RiskLevel): string {
   switch (level) {
     case "GREEN":
