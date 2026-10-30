@@ -8,7 +8,7 @@ import type { StoredCheck } from "@/lib/selfCheck";
  * from NASA Human Research Program risk summaries, not medical advice.
  */
 
-export type RegionId = "brain" | "eyes" | "heart" | "lungs" | "blood" | "musculoskeletal";
+export type RegionId = "brain" | "eyes" | "heart" | "lungs" | "blood" | "musculoskeletal" | "reproductive";
 
 export type Reading = { label: string; value: string; level: RiskLevel | null };
 
@@ -38,6 +38,7 @@ export type BodyInputs = {
   pvt: { mean: number; lapses: number } | null;
   check: StoredCheck | null;
   missionDay: number;
+  sex: "male" | "female";
 };
 
 const worst = (levels: (RiskLevel | null)[]): RiskLevel =>
@@ -143,6 +144,35 @@ export function assessBody(x: BodyInputs): RegionStatus[] {
   const boneLoss = months * 1.25 * (1 - 0.7 * adherence);
   const boneLevel: RiskLevel = boneLoss > 6 ? "YELLOW" : "GREEN";
 
+  // --- Reproductive & urinary: radiation-sensitive organs, urinary retention, UTIs, kidney stones
+  const reproRad: RiskLevel = x.doseRate > 1 ? "RED" : x.doseRate > 0.1 ? "YELLOW" : "GREEN";
+  const reproTemp = temp && temp.level !== "GREEN" ? temp.level : null;
+  const female = x.sex === "female";
+  const reproductive: RegionStatus = {
+    id: "reproductive",
+    name: female ? "Breasts, reproductive & urinary" : "Reproductive & urinary",
+    level: worst([reproRad, reproTemp, boneLevel === "YELLOW" ? "YELLOW" : null]),
+    readings: [
+      { label: "Radiation dose rate", value: `${x.doseRate.toFixed(3)} mSv/h`, level: reproRad },
+      { label: "Temperature (infection)", value: temp?.display ?? notDone, level: temp?.level ?? null },
+      { label: "Kidney-stone risk", value: boneLevel === "YELLOW" ? "raised (bone calcium)" : "normal", level: boneLevel === "YELLOW" ? "YELLOW" : "GREEN" },
+    ],
+    role: female
+      ? "Breasts, ovaries and uterus (hormones and fertility), plus kidneys and bladder, which filter blood and remove waste."
+      : "Testes and prostate (hormones and fertility), plus kidneys and bladder, which filter blood and remove waste.",
+    space: female
+      ? "Ovaries and breast tissue are sensitive to radiation, which raises long-term cancer risk. Many astronauts suppress periods with hormones on long missions. Fluid shifts and less thirst raise urinary-tract infection and kidney-stone risk."
+      : "The testes are among the most radiation-sensitive organs and sperm counts can drop temporarily. Early in flight the bladder can be hard to empty (urinary retention). Bone calcium and less thirst raise kidney-stone and urinary-infection risk.",
+    hazards: "Radiation · Gravity · Hostile environment",
+    actions: [
+      "Drink to target (about 2-2.5 L a day) and keep urine pale; tell the CMO about burning, pain or blood when passing urine.",
+      ...(female
+        ? ["Do a monthly breast self-check and log any lump or change; record cycle or hormone-suppression side effects in the self-check notes."]
+        : ["Report testicular pain, swelling or a lump, or difficulty emptying the bladder, to the CMO."]),
+      ...(reproRad !== "GREEN" ? ["Raised radiation: use the shielded sleep station and limit time in lightly shielded modules."] : []),
+    ],
+  };
+
   return [
     {
       id: "brain",
@@ -237,6 +267,7 @@ export function assessBody(x: BodyInputs): RegionStatus[] {
               "Drink extra water to lower kidney-stone risk from bone calcium.",
             ],
     },
+    reproductive,
   ];
 }
 
@@ -272,7 +303,7 @@ export function assessHazards(x: BodyInputs, regions: RegionStatus[], spaceMode:
       now: `${x.doseRate.toFixed(3)} mSv/h${radLevel === "RED" ? " · shelter now" : radLevel === "YELLOW" ? " · above background" : " · background"}`,
       about:
         "Outside Earth's magnetic field, galactic cosmic rays and solar particle events raise cancer risk and can damage the brain, heart and blood-forming cells.",
-      regions: ["blood", "brain", "heart"],
+      regions: ["blood", "brain", "heart", "reproductive"],
     },
     {
       id: "isolation",
@@ -292,7 +323,7 @@ export function assessHazards(x: BodyInputs, regions: RegionStatus[], spaceMode:
       now: spaceMode ? "20 min one-way delay · no evacuation" : "link to Earth available",
       about:
         "Help is 20 minutes away by radio and months away in person. The crew must assess and treat themselves, which is why the on-board co-pilot and protocols exist.",
-      regions: ["brain", "heart", "lungs", "blood", "eyes", "musculoskeletal"],
+      regions: ["brain", "heart", "lungs", "blood", "eyes", "musculoskeletal", "reproductive"],
     },
     {
       id: "gravity",
@@ -312,7 +343,7 @@ export function assessHazards(x: BodyInputs, regions: RegionStatus[], spaceMode:
       now: `CO₂ ${x.ppCO2.toFixed(1)} mmHg${temp ? ` · temp ${temp.display}` : ""}`,
       about:
         "Recycled air, CO₂ build-up, noise, microbes and a weakened immune system make the cabin itself a health risk. Air quality and fever are watched daily.",
-      regions: ["lungs", "brain", "blood"],
+      regions: ["lungs", "brain", "blood", "reproductive"],
     },
   ];
 }
